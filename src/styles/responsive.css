@@ -408,10 +408,6 @@
   .contracts-grid {
     grid-template-columns: 1fr;
   }
-
-  .contract-card__media {
-    aspect-ratio: 4 / 3;
-  }
 }
 
 /* ==========================================================================

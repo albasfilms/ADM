@@ -22,7 +22,6 @@ import { getInstallmentRemaining } from '../utils/installmentStatus.js';
 import {
   CONTRACT_STATUS,
   CONTRACT_STATUS_LABELS,
-  SERVICE_TYPES,
   SERVICE_TYPE_LABELS,
   INSTALLMENT_STATUS_LABELS,
 } from '../utils/constants.js';
@@ -46,21 +45,6 @@ function resetPagination() {
   listState.cursors = [null];
 }
 
-function getServiceIcon(serviceType) {
-  const icons = {
-    [SERVICE_TYPES.WEDDING]: 'heart',
-    [SERVICE_TYPES.PHOTOGRAPHY]: 'camera',
-    [SERVICE_TYPES.PORTRAIT]: 'image',
-    [SERVICE_TYPES.STORYMAKER]: 'smartphone',
-    [SERVICE_TYPES.FILMMAKER]: 'video',
-    [SERVICE_TYPES.TEASER]: 'film',
-    [SERVICE_TYPES.CORPORATE]: 'briefcase',
-    [SERVICE_TYPES.BIRTHDAY]: 'cake',
-    [SERVICE_TYPES.CONTENT]: 'sparkles',
-  };
-  return icons[serviceType] || 'clapperboard';
-}
-
 function formatEventLocation(contract) {
   const parts = [contract.eventLocation, contract.city, contract.state].filter(Boolean);
   return parts.length ? parts.join(' · ') : 'Local não informado';
@@ -76,42 +60,41 @@ function buildContractCardHTML(contract) {
 
   return `
     <article class="contract-card" data-contract-id="${contract.id}" tabindex="0" role="button" aria-label="Ver contrato ${escapeHtml(contract.title)}">
-      <div class="contract-card__media">
-        <span class="contract-card__service">${escapeHtml(serviceLabel)}</span>
-        <i data-lucide="${getServiceIcon(contract.serviceType)}" class="contract-card__icon" aria-hidden="true"></i>
+      <div class="contract-card__header">
+        <div class="contract-card__heading">
+          <h3 class="contract-card__title">${escapeHtml(contract.title)}</h3>
+          <p class="contract-card__client">${escapeHtml(contract.clientName)}</p>
+        </div>
         <div class="contract-card__status" data-status="${contract.id}"></div>
       </div>
-      <div class="contract-card__body">
-        <h3 class="contract-card__title">${escapeHtml(contract.title)}</h3>
-        <p class="contract-card__client">${escapeHtml(contract.clientName)}</p>
-        <ul class="contract-card__meta">
-          <li>
-            <i data-lucide="calendar" aria-hidden="true"></i>
-            <span>${formatDate(contract.eventDate)}</span>
-          </li>
-          ${
-            contract.eventTime
-              ? `<li><i data-lucide="clock" aria-hidden="true"></i><span>${escapeHtml(contract.eventTime)}</span></li>`
-              : ''
-          }
-          <li>
-            <i data-lucide="map-pin" aria-hidden="true"></i>
-            <span>${escapeHtml(location)}</span>
-          </li>
-        </ul>
-        <div class="contract-card__footer">
-          <div class="contract-card__amount">
-            <span class="contract-card__label">Total</span>
-            <strong>${formatCurrency(contract.totalAmount)}</strong>
-          </div>
-          <div class="contract-card__amount">
-            <span class="contract-card__label">Recebido</span>
-            <strong>${formatCurrency(contract.receivedAmount)}</strong>
-          </div>
+      <span class="contract-card__service">${escapeHtml(serviceLabel)}</span>
+      <ul class="contract-card__meta">
+        <li>
+          <i data-lucide="calendar" aria-hidden="true"></i>
+          <span>${formatDate(contract.eventDate)}</span>
+        </li>
+        ${
+          contract.eventTime
+            ? `<li><i data-lucide="clock" aria-hidden="true"></i><span>${escapeHtml(contract.eventTime)}</span></li>`
+            : ''
+        }
+        <li>
+          <i data-lucide="map-pin" aria-hidden="true"></i>
+          <span>${escapeHtml(location)}</span>
+        </li>
+      </ul>
+      <div class="contract-card__footer">
+        <div class="contract-card__amount">
+          <span class="contract-card__label">Total</span>
+          <strong>${formatCurrency(contract.totalAmount)}</strong>
         </div>
-        <div class="contract-card__progress" aria-hidden="true">
-          <div class="contract-card__progress-fill" style="width: ${percent}%"></div>
+        <div class="contract-card__amount">
+          <span class="contract-card__label">Recebido</span>
+          <strong>${formatCurrency(contract.receivedAmount)}</strong>
         </div>
+      </div>
+      <div class="contract-card__progress" aria-hidden="true">
+        <div class="contract-card__progress-fill" style="width: ${percent}%"></div>
       </div>
     </article>
   `;
@@ -124,12 +107,10 @@ function createContractsGridSkeleton(count = 6) {
     .map(
       () => `
     <div class="contract-card contract-card--skeleton">
-      <div class="contract-card__media skeleton"></div>
-      <div class="contract-card__body">
-        <div class="skeleton skeleton--text" style="width: 70%"></div>
-        <div class="skeleton skeleton--text" style="width: 45%"></div>
-        <div class="skeleton skeleton--text" style="width: 90%"></div>
-      </div>
+      <div class="skeleton skeleton--text" style="width: 70%"></div>
+      <div class="skeleton skeleton--text" style="width: 45%"></div>
+      <div class="skeleton skeleton--text" style="width: 90%"></div>
+      <div class="skeleton skeleton--text" style="width: 60%"></div>
     </div>
   `
     )
