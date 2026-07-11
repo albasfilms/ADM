@@ -17,16 +17,19 @@ service cloud.firestore {
         && userDoc().data.active == true;
     }
 
+    function hasStaffAccess() {
+      return isAuthenticated()
+        && userDoc().exists
+        && userDoc().data.active == true
+        && userDoc().data.role in ['admin', 'collaborator'];
+    }
+
     function isAdmin() {
-      return isActiveUser() && userDoc().data.role == 'admin';
+      return hasStaffAccess() && userDoc().data.role == 'admin';
     }
 
     function isCollaborator() {
-      return isActiveUser() && userDoc().data.role == 'collaborator';
-    }
-
-    function hasStaffAccess() {
-      return isAdmin() || isCollaborator();
+      return hasStaffAccess() && userDoc().data.role == 'collaborator';
     }
 
     function validUserRole(role) {
@@ -176,6 +179,21 @@ service cloud.firestore {
     match /settings/{docId} {
       allow read: if hasStaffAccess();
       allow write: if isAdmin();
+    }
+
+    // ─── Pagamentos (collection group) ──────────────────────────
+    match /{path=**}/payments/{paymentId} {
+      allow read: if hasStaffAccess();
+      allow create: if hasStaffAccess()
+        && request.resource.data.amount is int
+        && request.resource.data.amount > 0
+        && request.resource.data.paymentMethod is string
+        && request.resource.data.contractId is string
+        && request.resource.data.clientId is string
+        && validTimestamp(request.resource.data.paymentDate)
+        && validTimestamp(request.resource.data.createdAt);
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     // Bloqueia tudo que não foi explicitamente permitido
