@@ -17,19 +17,9 @@ service cloud.firestore {
         && userDoc().data.active == true;
     }
 
-    function hasStaffAccess() {
-      return isAuthenticated()
-        && userDoc().exists
-        && userDoc().data.active == true
-        && userDoc().data.role in ['admin', 'collaborator'];
-    }
-
     function isAdmin() {
-      return hasStaffAccess() && userDoc().data.role == 'admin';
-    }
-
-    function isCollaborator() {
-      return hasStaffAccess() && userDoc().data.role == 'collaborator';
+      return isActiveUser()
+        && userDoc().data.role == 'admin';
     }
 
     function validUserRole(role) {
@@ -40,9 +30,8 @@ service cloud.firestore {
       return field is timestamp;
     }
 
-    // ─── Usuários ───────────────────────────────────────────────
+    // ─── Usuários (controle de login) ───────────────────────────
     match /users/{userId} {
-      // Permite que o usuário leia o próprio perfil após o login
       allow read: if isAuthenticated() && request.auth.uid == userId;
       allow read: if isAdmin();
 
@@ -83,14 +72,14 @@ service cloud.firestore {
         && validTimestamp(request.resource.data.updatedAt);
     }
 
-    // ─── Clientes (Etapa 2) ─────────────────────────────────────
+    // ─── Clientes — qualquer usuário autenticado ────────────────
     match /clients/{clientId} {
-      allow read: if hasStaffAccess();
-      allow create: if hasStaffAccess()
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
         && validClientData()
         && validTimestamp(request.resource.data.createdAt);
-      allow update: if hasStaffAccess() && validClientData();
-      allow delete: if isAdmin();
+      allow update: if isAuthenticated() && validClientData();
+      allow delete: if isAuthenticated();
     }
 
     function validContractData() {
@@ -131,30 +120,30 @@ service cloud.firestore {
         && validTimestamp(request.resource.data.dueDate);
     }
 
-    // ─── Contratos (Etapas 3–4) ─────────────────────────────────
+    // ─── Contratos — qualquer usuário autenticado ───────────────
     match /contracts/{contractId} {
-      allow read: if hasStaffAccess();
-      allow create: if hasStaffAccess()
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
         && validContractData()
         && validTimestamp(request.resource.data.createdAt);
-      allow update: if hasStaffAccess() && validContractData();
-      allow delete: if isAdmin();
+      allow update: if isAuthenticated() && validContractData();
+      allow delete: if isAuthenticated();
 
       match /items/{itemId} {
-        allow read: if hasStaffAccess();
-        allow create, update: if hasStaffAccess() && validContractItem();
-        allow delete: if isAdmin();
+        allow read: if isAuthenticated();
+        allow create, update: if isAuthenticated() && validContractItem();
+        allow delete: if isAuthenticated();
       }
 
       match /installments/{installmentId} {
-        allow read: if hasStaffAccess();
-        allow create: if hasStaffAccess() && validInstallment();
-        allow update: if hasStaffAccess() && validInstallment();
-        allow delete: if isAdmin();
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && validInstallment();
+        allow update: if isAuthenticated() && validInstallment();
+        allow delete: if isAuthenticated();
 
         match /payments/{paymentId} {
-          allow read: if hasStaffAccess();
-          allow create: if hasStaffAccess()
+          allow read: if isAuthenticated();
+          allow create: if isAuthenticated()
             && request.resource.data.amount is int
             && request.resource.data.amount > 0
             && request.resource.data.paymentMethod is string
@@ -162,29 +151,28 @@ service cloud.firestore {
             && request.resource.data.clientId is string
             && validTimestamp(request.resource.data.paymentDate)
             && validTimestamp(request.resource.data.createdAt);
-          allow update: if isAdmin();
-          allow delete: if isAdmin();
+          allow update: if isAuthenticated();
+          allow delete: if isAuthenticated();
         }
       }
     }
 
     // ─── Auditoria ──────────────────────────────────────────────
     match /auditLogs/{logId} {
-      allow read: if isAdmin();
-      allow create: if isActiveUser();
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
       allow update, delete: if false;
     }
 
     // ─── Configurações ──────────────────────────────────────────
     match /settings/{docId} {
-      allow read: if hasStaffAccess();
-      allow write: if isAdmin();
+      allow read, write: if isAuthenticated();
     }
 
     // ─── Pagamentos (collection group) ──────────────────────────
     match /{path=**}/payments/{paymentId} {
-      allow read: if hasStaffAccess();
-      allow create: if hasStaffAccess()
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
         && request.resource.data.amount is int
         && request.resource.data.amount > 0
         && request.resource.data.paymentMethod is string
@@ -192,11 +180,10 @@ service cloud.firestore {
         && request.resource.data.clientId is string
         && validTimestamp(request.resource.data.paymentDate)
         && validTimestamp(request.resource.data.createdAt);
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated();
     }
 
-    // Bloqueia tudo que não foi explicitamente permitido
     match /{document=**} {
       allow read, write: if false;
     }
