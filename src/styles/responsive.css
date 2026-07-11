@@ -191,13 +191,41 @@
     gap: var(--space-3);
   }
 
+  /* Métricas do dashboard — carrossel horizontal */
+  .summary-grid {
+    margin-inline: calc(-1 * var(--space-4));
+    padding-inline: var(--space-4);
+  }
+
+  .skeleton-cards {
+    margin-inline: calc(-1 * var(--space-4));
+    padding-inline: var(--space-4);
+  }
+
   .summary-card {
-    flex-direction: row;
-    align-items: center;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .summary-card__icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .summary-card__icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .summary-card__label {
+    font-size: 0.65rem;
+    line-height: 1.25;
+    margin-bottom: 0;
   }
 
   .summary-card__value {
-    font-size: var(--font-size-base);
+    font-size: var(--font-size-sm);
+    line-height: 1.2;
   }
 
   .contract-item-row {
