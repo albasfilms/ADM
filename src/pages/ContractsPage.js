@@ -22,6 +22,7 @@ import { getInstallmentRemaining } from '../utils/installmentStatus.js';
 import {
   CONTRACT_STATUS,
   CONTRACT_STATUS_LABELS,
+  SERVICE_TYPES,
   SERVICE_TYPE_LABELS,
   INSTALLMENT_STATUS_LABELS,
 } from '../utils/constants.js';
@@ -43,6 +44,110 @@ let listState = {
 function resetPagination() {
   listState.page = 1;
   listState.cursors = [null];
+}
+
+function getServiceIcon(serviceType) {
+  const icons = {
+    [SERVICE_TYPES.WEDDING]: 'heart',
+    [SERVICE_TYPES.PHOTOGRAPHY]: 'camera',
+    [SERVICE_TYPES.PORTRAIT]: 'image',
+    [SERVICE_TYPES.STORYMAKER]: 'smartphone',
+    [SERVICE_TYPES.FILMMAKER]: 'video',
+    [SERVICE_TYPES.TEASER]: 'film',
+    [SERVICE_TYPES.CORPORATE]: 'briefcase',
+    [SERVICE_TYPES.BIRTHDAY]: 'cake',
+    [SERVICE_TYPES.CONTENT]: 'sparkles',
+  };
+  return icons[serviceType] || 'clapperboard';
+}
+
+function formatEventLocation(contract) {
+  const parts = [contract.eventLocation, contract.city, contract.state].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'Local não informado';
+}
+
+function buildContractCardHTML(contract) {
+  const serviceLabel = SERVICE_TYPE_LABELS[contract.serviceType] || 'Serviço';
+  const location = formatEventLocation(contract);
+  const percent =
+    contract.totalAmount > 0
+      ? Math.min(100, Math.round((contract.receivedAmount / contract.totalAmount) * 100))
+      : 0;
+
+  return `
+    <article class="contract-card" data-contract-id="${contract.id}" tabindex="0" role="button" aria-label="Ver contrato ${escapeHtml(contract.title)}">
+      <div class="contract-card__media">
+        <span class="contract-card__service">${escapeHtml(serviceLabel)}</span>
+        <i data-lucide="${getServiceIcon(contract.serviceType)}" class="contract-card__icon" aria-hidden="true"></i>
+        <div class="contract-card__status" data-status="${contract.id}"></div>
+      </div>
+      <div class="contract-card__body">
+        <h3 class="contract-card__title">${escapeHtml(contract.title)}</h3>
+        <p class="contract-card__client">${escapeHtml(contract.clientName)}</p>
+        <ul class="contract-card__meta">
+          <li>
+            <i data-lucide="calendar" aria-hidden="true"></i>
+            <span>${formatDate(contract.eventDate)}</span>
+          </li>
+          ${
+            contract.eventTime
+              ? `<li><i data-lucide="clock" aria-hidden="true"></i><span>${escapeHtml(contract.eventTime)}</span></li>`
+              : ''
+          }
+          <li>
+            <i data-lucide="map-pin" aria-hidden="true"></i>
+            <span>${escapeHtml(location)}</span>
+          </li>
+        </ul>
+        <div class="contract-card__footer">
+          <div class="contract-card__amount">
+            <span class="contract-card__label">Total</span>
+            <strong>${formatCurrency(contract.totalAmount)}</strong>
+          </div>
+          <div class="contract-card__amount">
+            <span class="contract-card__label">Recebido</span>
+            <strong>${formatCurrency(contract.receivedAmount)}</strong>
+          </div>
+        </div>
+        <div class="contract-card__progress" aria-hidden="true">
+          <div class="contract-card__progress-fill" style="width: ${percent}%"></div>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function createContractsGridSkeleton(count = 6) {
+  const grid = document.createElement('div');
+  grid.className = 'contracts-grid';
+  grid.innerHTML = Array.from({ length: count })
+    .map(
+      () => `
+    <div class="contract-card contract-card--skeleton">
+      <div class="contract-card__media skeleton"></div>
+      <div class="contract-card__body">
+        <div class="skeleton skeleton--text" style="width: 70%"></div>
+        <div class="skeleton skeleton--text" style="width: 45%"></div>
+        <div class="skeleton skeleton--text" style="width: 90%"></div>
+      </div>
+    </div>
+  `
+    )
+    .join('');
+  return grid;
+}
+
+function bindContractCards(container) {
+  container.querySelectorAll('.contract-card[data-contract-id]').forEach((card) => {
+    const open = () => navigateTo(`/contratos/${card.dataset.contractId}`);
+    card.addEventListener('click', open);
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        open();
+      }
+    });
+  });
 }
 
 function navigateTo(path) {
@@ -405,7 +510,7 @@ async function renderContractDetail(container, contractId) {
 
 async function loadContractsList(listContainer, paginationContainer) {
   listContainer.innerHTML = '';
-  listContainer.appendChild(createSkeletonRows(6, 6));
+  listContainer.appendChild(createContractsGridSkeleton(6));
 
   try {
     const cursor = listState.cursors[listState.page - 1] ?? null;
@@ -447,52 +552,18 @@ async function loadContractsList(listContainer, paginationContainer) {
       return;
     }
 
-    const wrapper = document.createElement('div');
-    wrapper.className = 'data-table-wrapper';
-    wrapper.innerHTML = `
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Contrato</th>
-            <th>Cliente</th>
-            <th>Evento</th>
-            <th>Total</th>
-            <th>Recebido</th>
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${result.contracts
-            .map(
-              (c) => `
-            <tr>
-              <td><div class="table-cell__primary">${escapeHtml(c.title)}</div></td>
-              <td>${escapeHtml(c.clientName)}</td>
-              <td>${formatDate(c.eventDate)}</td>
-              <td>${formatCurrency(c.totalAmount)}</td>
-              <td>${formatCurrency(c.receivedAmount)}</td>
-              <td data-status="${c.id}"></td>
-              <td><button type="button" class="btn btn--ghost btn--sm" data-view="${c.id}">Ver</button></td>
-            </tr>
-          `
-            )
-            .join('')}
-        </tbody>
-      </table>
-    `;
+    const grid = document.createElement('div');
+    grid.className = 'contracts-grid';
+    grid.innerHTML = result.contracts.map((c) => buildContractCardHTML(c)).join('');
 
-    listContainer.appendChild(wrapper);
+    listContainer.appendChild(grid);
 
     result.contracts.forEach((c) => {
-      wrapper.querySelector(`[data-status="${c.id}"]`)?.appendChild(
-        createContractStatusBadge(c.status)
-      );
+      grid.querySelector(`[data-status="${c.id}"]`)?.appendChild(createContractStatusBadge(c.status));
     });
 
-    wrapper.querySelectorAll('[data-view]').forEach((btn) => {
-      btn.addEventListener('click', () => navigateTo(`/contratos/${btn.dataset.view}`));
-    });
+    renderIcons(grid);
+    bindContractCards(grid);
 
     paginationContainer.innerHTML = '';
     paginationContainer.appendChild(
