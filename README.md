@@ -108,6 +108,31 @@ npm run build
 
 Os arquivos serão gerados em `dist/`.
 
+## Publicar no GitHub Pages
+
+URL do site: `https://albasfilms.github.io/ADM/`
+
+### Pré-requisitos
+
+1. O código precisa estar no repositório `albasfilms/ADM` (push na branch `main`)
+2. Em **Settings → Secrets and variables → Actions**, cadastre os secrets:
+   - `VITE_FIREBASE_API_KEY`
+   - `VITE_FIREBASE_AUTH_DOMAIN`
+   - `VITE_FIREBASE_PROJECT_ID`
+   - `VITE_FIREBASE_STORAGE_BUCKET`
+   - `VITE_FIREBASE_MESSAGING_SENDER_ID`
+   - `VITE_FIREBASE_APP_ID`
+3. Em **Settings → Pages**, em **Source**, selecione **GitHub Actions** (não "Deploy from a branch")
+
+O workflow `.github/workflows/deploy-pages.yml` faz o build e publica automaticamente a cada push na `main`.
+
+### Erro de permissão no push
+
+Se aparecer `Permission denied to Pehalba`, a conta logada no Git não tem acesso de escrita ao repositório `albasfilms/ADM`. Soluções:
+
+- Fazer login/push com a conta **albasfilms**, ou
+- Adicionar o usuário **Pehalba** como colaborador em **Settings → Collaborators** do repositório
+
 ## Publicar no Firebase Hosting
 
 ```bash

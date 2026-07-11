@@ -23,11 +23,17 @@ const ACTIVE_CONTRACT_STATUSES = [
 ];
 
 export async function getDashboardData() {
-  const [clientsSnap, contractsSnap, recentPayments] = await Promise.all([
+  const [clientsSnap, contractsSnap] = await Promise.all([
     getDocs(collection(db, 'clients')),
     getDocs(query(collection(db, 'contracts'), orderBy('createdAt', 'desc'), limit(500))),
-    getRecentPayments(8),
   ]);
+
+  let recentPayments = [];
+  try {
+    recentPayments = await getRecentPayments(8);
+  } catch (error) {
+    console.warn('[Dashboard] Pagamentos recentes indisponíveis:', error);
+  }
 
   const clients = clientsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
   const contracts = contractsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));

@@ -1,4 +1,4 @@
-const BASE = '/images';
+const BASE = `${import.meta.env.BASE_URL}images`;
 
 function asset(filename) {
   return `${BASE}/${encodeURI(filename)}`;
