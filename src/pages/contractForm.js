@@ -277,6 +277,7 @@ export function openContractFormModal({
 }) {
   const isEdit = Boolean(contract);
   const form = document.createElement('form');
+  form.id = 'contract-form';
   form.className = 'contract-form';
   form.noValidate = true;
 
@@ -444,7 +445,7 @@ export function openContractFormModal({
         ? '<button type="button" class="btn btn--secondary" data-action="preview">Gerar prévia de parcelas</button>'
         : ''
     }
-    <button type="submit" class="btn btn--primary">${isEdit ? 'Salvar alterações' : 'Salvar contrato'}</button>
+    <button type="submit" class="btn btn--primary" form="contract-form">${isEdit ? 'Salvar alterações' : 'Salvar contrato'}</button>
   `;
 
   const { close } = createModal({
@@ -565,7 +566,7 @@ export function openContractFormModal({
       onSaved?.();
     } catch (error) {
       console.error('[Contract] Erro ao salvar:', error);
-      showToast('Erro ao salvar contrato.', 'error');
+      showToast(error.message || 'Erro ao salvar contrato.', 'error');
       submitBtn.disabled = false;
       submitBtn.classList.remove('btn--loading');
     }

@@ -197,8 +197,21 @@ export async function deletePayment({ contractId, installmentId, paymentId, user
 }
 
 export async function getRecentPayments(limitCount = 10) {
-  const snapshot = await getDocs(
-    query(collectionGroup(db, 'payments'), orderBy('createdAt', 'desc'), limit(limitCount))
-  );
-  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+  try {
+    const snapshot = await getDocs(
+      query(collectionGroup(db, 'payments'), limit(Math.max(limitCount * 5, 50)))
+    );
+
+    return snapshot.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => {
+        const aTime = a.createdAt?.toMillis?.() || a.paymentDate?.toMillis?.() || 0;
+        const bTime = b.createdAt?.toMillis?.() || b.paymentDate?.toMillis?.() || 0;
+        return bTime - aTime;
+      })
+      .slice(0, limitCount);
+  } catch (error) {
+    console.warn('[Payments] Erro ao listar pagamentos recentes:', error);
+    return [];
+  }
 }
