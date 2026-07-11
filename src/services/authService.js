@@ -53,6 +53,14 @@ function storeAuthError(message) {
   } catch {
     // ignore
   }
+  showLoginError(message);
+}
+
+function showLoginError(message) {
+  const errorBox = document.getElementById('login-error');
+  if (!errorBox) return;
+  errorBox.textContent = message;
+  errorBox.hidden = false;
 }
 
 export function consumeAuthError() {
@@ -97,7 +105,7 @@ export function initAuthListener() {
       console.error('[Auth] Erro ao carregar perfil:', error);
       const message =
         error.code === 'permission-denied'
-          ? 'Acesso negado ao Firestore. Publique as regras completas e confira o documento users no Firebase.'
+          ? `Acesso negado ao Firestore. Confira se o documento users/${firebaseUser.uid} existe e se as regras foram publicadas.`
           : 'Erro ao carregar perfil. Verifique as regras do Firestore.';
       storeAuthError(message);
       await signOut(auth);
@@ -131,8 +139,7 @@ export async function login(email, password) {
     return profile;
   } catch (error) {
     if (error.code === 'permission-denied') {
-      const message =
-        'Acesso negado ao Firestore. Publique as regras completas e confira o documento users no Firebase.';
+      const message = `Acesso negado ao Firestore. Confira se o documento users/${auth.currentUser?.uid || 'seu-uid'} existe e se as regras foram publicadas.`;
       storeAuthError(message);
       throw new Error(message);
     }

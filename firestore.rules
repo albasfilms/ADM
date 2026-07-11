@@ -39,7 +39,8 @@ service cloud.firestore {
 
     // ─── Usuários ───────────────────────────────────────────────
     match /users/{userId} {
-      allow read: if isActiveUser() && request.auth.uid == userId;
+      // Permite que o usuário leia o próprio perfil após o login
+      allow read: if isAuthenticated() && request.auth.uid == userId;
       allow read: if isAdmin();
 
       allow create: if isAdmin()
