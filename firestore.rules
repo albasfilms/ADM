@@ -22,166 +22,45 @@ service cloud.firestore {
         && userDoc().data.role == 'admin';
     }
 
-    function validUserRole(role) {
-      return role in ['admin', 'collaborator'];
-    }
-
-    function validTimestamp(field) {
-      return field is timestamp;
-    }
-
-    // ─── Usuários (controle de login) ───────────────────────────
+    // ─── Usuários (só controle de login) ────────────────────────
     match /users/{userId} {
       allow read: if isAuthenticated() && request.auth.uid == userId;
       allow read: if isAdmin();
-
-      allow create: if isAdmin()
-        && validUserRole(request.resource.data.role)
-        && request.resource.data.email is string
-        && request.resource.data.name is string
-        && request.resource.data.active is bool
-        && validTimestamp(request.resource.data.createdAt)
-        && validTimestamp(request.resource.data.updatedAt);
-
-      allow update: if isAdmin()
-        && validUserRole(request.resource.data.role)
-        && request.resource.data.email is string
-        && request.resource.data.name is string
-        && request.resource.data.active is bool
-        && validTimestamp(request.resource.data.updatedAt)
-        && request.resource.data.role == resource.data.role || isAdmin();
-
-      allow delete: if isAdmin();
+      allow write: if isAdmin();
     }
 
-    function validClientData() {
-      return request.resource.data.name is string
-        && request.resource.data.name.size() > 0
-        && request.resource.data.nameLower is string
-        && request.resource.data.personType in ['individual', 'company']
-        && request.resource.data.status in ['active', 'inactive']
-        && request.resource.data.document is string
-        && request.resource.data.phone is string
-        && request.resource.data.whatsapp is string
-        && request.resource.data.email is string
-        && request.resource.data.instagram is string
-        && request.resource.data.address is string
-        && request.resource.data.city is string
-        && request.resource.data.state is string
-        && request.resource.data.notes is string
-        && validTimestamp(request.resource.data.updatedAt);
-    }
-
-    // ─── Clientes — qualquer usuário autenticado ────────────────
+    // ─── Dados do sistema — liberado para quem está logado ──────
     match /clients/{clientId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated()
-        && validClientData()
-        && validTimestamp(request.resource.data.createdAt);
-      allow update: if isAuthenticated() && validClientData();
-      allow delete: if isAuthenticated();
+      allow read, write: if isAuthenticated();
     }
 
-    function validContractData() {
-      return request.resource.data.clientId is string
-        && request.resource.data.clientName is string
-        && request.resource.data.title is string
-        && request.resource.data.title.size() > 0
-        && request.resource.data.status in [
-          'budget', 'awaiting_signature', 'awaiting_entry', 'confirmed',
-          'in_progress', 'finished', 'paid_off', 'cancelled'
-        ]
-        && request.resource.data.totalAmount is int
-        && request.resource.data.totalAmount >= 0
-        && request.resource.data.receivedAmount is int
-        && request.resource.data.receivedAmount >= 0
-        && request.resource.data.pendingAmount is int
-        && request.resource.data.pendingAmount >= 0
-        && request.resource.data.overdueAmount is int
-        && request.resource.data.overdueAmount >= 0
-        && validTimestamp(request.resource.data.updatedAt);
-    }
-
-    function validContractItem() {
-      return request.resource.data.description is string
-        && request.resource.data.serviceType is string
-        && request.resource.data.amount is int
-        && request.resource.data.amount >= 0;
-    }
-
-    function validInstallment() {
-      return request.resource.data.number is int
-        && request.resource.data.description is string
-        && request.resource.data.expectedAmount is int
-        && request.resource.data.expectedAmount >= 0
-        && request.resource.data.paidAmount is int
-        && request.resource.data.paidAmount >= 0
-        && request.resource.data.status in ['pending', 'paid', 'partial', 'overdue', 'cancelled']
-        && validTimestamp(request.resource.data.dueDate);
-    }
-
-    // ─── Contratos — qualquer usuário autenticado ───────────────
     match /contracts/{contractId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated()
-        && validContractData()
-        && validTimestamp(request.resource.data.createdAt);
-      allow update: if isAuthenticated() && validContractData();
-      allow delete: if isAuthenticated();
+      allow read, write: if isAuthenticated();
 
       match /items/{itemId} {
-        allow read: if isAuthenticated();
-        allow create, update: if isAuthenticated() && validContractItem();
-        allow delete: if isAuthenticated();
+        allow read, write: if isAuthenticated();
       }
 
       match /installments/{installmentId} {
-        allow read: if isAuthenticated();
-        allow create: if isAuthenticated() && validInstallment();
-        allow update: if isAuthenticated() && validInstallment();
-        allow delete: if isAuthenticated();
+        allow read, write: if isAuthenticated();
 
         match /payments/{paymentId} {
-          allow read: if isAuthenticated();
-          allow create: if isAuthenticated()
-            && request.resource.data.amount is int
-            && request.resource.data.amount > 0
-            && request.resource.data.paymentMethod is string
-            && request.resource.data.contractId is string
-            && request.resource.data.clientId is string
-            && validTimestamp(request.resource.data.paymentDate)
-            && validTimestamp(request.resource.data.createdAt);
-          allow update: if isAuthenticated();
-          allow delete: if isAuthenticated();
+          allow read, write: if isAuthenticated();
         }
       }
     }
 
-    // ─── Auditoria ──────────────────────────────────────────────
     match /auditLogs/{logId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if false;
+      allow read, create: if isAuthenticated();
     }
 
-    // ─── Configurações ──────────────────────────────────────────
     match /settings/{docId} {
       allow read, write: if isAuthenticated();
     }
 
-    // ─── Pagamentos (collection group) ──────────────────────────
+    // Pagamentos — consulta em qualquer contrato
     match /{path=**}/payments/{paymentId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated()
-        && request.resource.data.amount is int
-        && request.resource.data.amount > 0
-        && request.resource.data.paymentMethod is string
-        && request.resource.data.contractId is string
-        && request.resource.data.clientId is string
-        && validTimestamp(request.resource.data.paymentDate)
-        && validTimestamp(request.resource.data.createdAt);
-      allow update: if isAuthenticated();
-      allow delete: if isAuthenticated();
+      allow read, write: if isAuthenticated();
     }
 
     match /{document=**} {
