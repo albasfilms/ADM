@@ -2,13 +2,7 @@
    Tablet / sidebar colapsada (≤1024px)
    ========================================================================== */
 @media (max-width: 1024px) {
-  .app-shell__main {
-    margin-left: 0;
-  }
-
   .sidebar {
-    transform: translateX(-100%);
-    width: min(85vw, var(--sidebar-width));
     padding-bottom: env(safe-area-inset-bottom, 0);
   }
 
@@ -20,15 +14,7 @@
     display: block;
   }
 
-  .header__menu-btn {
-    display: flex;
-  }
-
   .detail-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .dashboard-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -38,7 +24,7 @@
    ========================================================================== */
 @media (max-width: 768px) {
   .app-shell__content {
-    padding: var(--space-5);
+    padding: var(--space-4) var(--space-5);
   }
 
   .page-header {
@@ -50,16 +36,20 @@
   }
 
   .brand-hero__title {
-    font-size: var(--font-size-xl);
+    font-size: var(--font-size-lg);
   }
 
-  .summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-3);
+  .brand-hero__subtitle {
+    font-size: var(--font-size-xs);
   }
 
   .summary-card {
     padding: var(--space-4);
+  }
+
+  .card {
+    width: 100%;
+    min-width: 0;
   }
 
   .card__header,
@@ -82,6 +72,10 @@
 
   .form-section__header .btn {
     align-self: flex-start;
+  }
+
+  .chart-container {
+    height: 240px;
   }
 }
 
@@ -197,20 +191,9 @@
     gap: var(--space-3);
   }
 
-  .dashboard-grid {
-    grid-template-columns: 1fr;
-    gap: var(--space-4);
-  }
-
-  .summary-grid {
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-3);
-  }
-
   .summary-card {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-2);
+    flex-direction: row;
+    align-items: center;
   }
 
   .summary-card__value {
@@ -280,8 +263,8 @@
   }
 
   .chart-container {
-    height: 220px;
-    margin: 0 calc(-1 * var(--space-2));
+    height: 200px;
+    margin: 0;
   }
 
   .pagination {
@@ -368,10 +351,6 @@
    Mobile pequeno (≤480px)
    ========================================================================== */
 @media (max-width: 480px) {
-  .summary-grid {
-    grid-template-columns: 1fr;
-  }
-
   .page-header__subtitle {
     font-size: var(--font-size-xs);
   }
@@ -388,6 +367,10 @@
   .btn {
     white-space: normal;
     text-align: center;
+  }
+
+  .brand-hero__title {
+    font-size: var(--font-size-base);
   }
 }
 

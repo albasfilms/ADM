@@ -51,6 +51,9 @@ function renderAlerts(container, alerts) {
 }
 
 function renderChart(canvas, labels, data, label) {
+  const isMobile = window.innerWidth < 640;
+  const tickSize = isMobile ? 10 : 12;
+
   return new Chart(canvas, {
     type: 'bar',
     data: {
@@ -81,13 +84,28 @@ function renderChart(canvas, labels, data, label) {
         },
       },
       scales: {
+        x: {
+          ticks: {
+            maxRotation: isMobile ? 45 : 0,
+            minRotation: isMobile ? 45 : 0,
+            autoSkip: true,
+            maxTicksLimit: isMobile ? 4 : 6,
+            font: { size: tickSize },
+          },
+          grid: {
+            display: !isMobile,
+          },
+        },
         y: {
           ticks: {
+            maxTicksLimit: isMobile ? 4 : 6,
+            font: { size: tickSize },
             callback: (v) =>
               new Intl.NumberFormat('pt-BR', {
                 style: 'currency',
                 currency: 'BRL',
                 maximumFractionDigits: 0,
+                notation: isMobile ? 'compact' : 'standard',
               }).format(v),
           },
         },
