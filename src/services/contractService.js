@@ -33,15 +33,16 @@ function matchesSearch(contract, search) {
   );
 }
 
+import { CLIENT_STATUS } from '../utils/constants.js';
+
 export async function getActiveClients() {
   const snapshot = await getDocs(
-    query(
-      collection(db, 'clients'),
-      where('status', '==', 'active'),
-      orderBy('name', 'asc')
-    )
+    query(collection(db, 'clients'), where('status', '==', CLIENT_STATUS.ACTIVE))
   );
-  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  return snapshot.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
 }
 
 export async function getContracts({

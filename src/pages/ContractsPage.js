@@ -65,7 +65,11 @@ async function openNewContractModal(onSaved) {
     openContractFormModal({ clients, onSaved });
   } catch (error) {
     console.error('[Contracts] Erro ao carregar clientes:', error);
-    showToast('Erro ao carregar clientes.', 'error');
+    const message =
+      error.code === 'failed-precondition'
+        ? 'Índice do Firestore pendente. Tente novamente em instantes.'
+        : 'Erro ao carregar clientes.';
+    showToast(message, 'error');
   }
 }
 
