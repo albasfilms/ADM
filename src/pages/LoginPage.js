@@ -1,4 +1,4 @@
-import { login, resetPassword } from '../services/authService.js';
+import { login, resetPassword, consumeAuthError } from '../services/authService.js';
 import { renderIcons } from '../utils/dom.js';
 import { BRAND_LOGO } from '../utils/brandAssets.js';
 
@@ -180,5 +180,11 @@ export function renderLoginPage(container) {
   });
 
   renderIcons(container);
+
+  const pendingError = consumeAuthError();
+  if (pendingError) {
+    showError(pendingError);
+  }
+
   emailInput.focus();
 }

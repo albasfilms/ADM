@@ -37,6 +37,37 @@ export async function loadUserProfile(uid) {
   return { id: snapshot.id, ...snapshot.data() };
 }
 
+function profileAccessError(uid, reason) {
+  if (reason === 'missing') {
+    return `Perfil não encontrado no Firestore. Crie o documento users/${uid} com role "admin" e active true.`;
+  }
+  if (reason === 'inactive') {
+    return 'Sua conta está inativa. Contate o administrador.';
+  }
+  return 'Não foi possível validar seu perfil de acesso.';
+}
+
+function storeAuthError(message) {
+  try {
+    sessionStorage.setItem('auth_error', message);
+  } catch {
+    // ignore
+  }
+}
+
+export function consumeAuthError() {
+  try {
+    const message = sessionStorage.getItem('auth_error');
+    if (message) {
+      sessionStorage.removeItem('auth_error');
+      return message;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 export function initAuthListener() {
   return onAuthStateChanged(auth, async (firebaseUser) => {
     setAuthUser(firebaseUser);
@@ -51,6 +82,10 @@ export function initAuthListener() {
       const profile = await loadUserProfile(firebaseUser.uid);
 
       if (!profile || !profile.active) {
+        const message = !profile
+          ? profileAccessError(firebaseUser.uid, 'missing')
+          : profileAccessError(firebaseUser.uid, 'inactive');
+        storeAuthError(message);
         await signOut(auth);
         setProfile(null);
         setAuthReady(true);
@@ -60,6 +95,11 @@ export function initAuthListener() {
       setProfile(profile);
     } catch (error) {
       console.error('[Auth] Erro ao carregar perfil:', error);
+      const message =
+        error.code === 'permission-denied'
+          ? 'Acesso negado ao Firestore. Publique as regras completas e confira o documento users no Firebase.'
+          : 'Erro ao carregar perfil. Verifique as regras do Firestore.';
+      storeAuthError(message);
       await signOut(auth);
       setProfile(null);
     } finally {
@@ -74,18 +114,28 @@ export async function login(email, password) {
     const profile = await loadUserProfile(credential.user.uid);
 
     if (!profile) {
+      const message = profileAccessError(credential.user.uid, 'missing');
+      storeAuthError(message);
       await signOut(auth);
-      throw new Error('Usuário sem permissão de acesso. Contate o administrador.');
+      throw new Error(message);
     }
 
     if (!profile.active) {
+      const message = profileAccessError(credential.user.uid, 'inactive');
+      storeAuthError(message);
       await signOut(auth);
-      throw new Error('Sua conta está inativa. Contate o administrador.');
+      throw new Error(message);
     }
 
     setProfile(profile);
     return profile;
   } catch (error) {
+    if (error.code === 'permission-denied') {
+      const message =
+        'Acesso negado ao Firestore. Publique as regras completas e confira o documento users no Firebase.';
+      storeAuthError(message);
+      throw new Error(message);
+    }
     if (error.code) {
       throw new Error(translateAuthError(error.code));
     }
