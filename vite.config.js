@@ -5,5 +5,14 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/firebase')) return 'firebase';
+          if (id.includes('node_modules/chart.js')) return 'charts';
+          if (id.includes('node_modules/lucide')) return 'icons';
+        },
+      },
+    },
   },
 });

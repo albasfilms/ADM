@@ -1,5 +1,6 @@
 import {
   collection,
+  collectionGroup,
   doc,
   getDoc,
   getDocs,
@@ -22,7 +23,7 @@ import {
 } from '../utils/constants.js';
 import { sumCents } from '../utils/currency.js';
 import { createAuditLog } from './auditService.js';
-import { getCached, invalidateCacheByPrefix } from '../utils/dataCache.js';
+import { getCached, invalidateCache, invalidateCacheByPrefix } from '../utils/dataCache.js';
 
 function invalidateContractsCache() {
   invalidateCacheByPrefix('contracts:');
@@ -125,6 +126,44 @@ export async function getContractInstallments(contractId) {
       .map((d) => ({ id: d.id, ...d.data() }))
       .sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
   });
+}
+
+async function fetchAllInstallmentRecords() {
+  const snapshot = await getDocs(collectionGroup(db, 'installments'));
+  return snapshot.docs.map((docSnap) => ({
+    contractId: docSnap.ref.parent.parent?.id || '',
+    installment: { id: docSnap.id, ...docSnap.data() },
+  }));
+}
+
+async function fetchInstallmentsFallback(contracts) {
+  const pairs = await Promise.all(
+    contracts.map(async (contract) => {
+      const installments = await getContractInstallments(contract.id);
+      return installments.map((installment) => ({ contract, installment }));
+    })
+  );
+  return pairs.flat();
+}
+
+export async function getInstallmentsForContracts(contracts = []) {
+  const contractMap = new Map(contracts.map((contract) => [contract.id, contract]));
+  if (!contractMap.size) return [];
+
+  try {
+    const records = await getCached('installments:all', fetchAllInstallmentRecords);
+
+    return records
+      .filter(({ contractId }) => contractMap.has(contractId))
+      .map(({ contractId, installment }) => ({
+        contract: contractMap.get(contractId),
+        installment,
+      }));
+  } catch (error) {
+    console.warn('[Contracts] Consulta em lote indisponível, usando fallback por contrato.', error);
+    invalidateCache('installments:all');
+    return fetchInstallmentsFallback([...contractMap.values()]);
+  }
 }
 
 export async function getContractFull(contractId) {

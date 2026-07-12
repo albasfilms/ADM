@@ -15,7 +15,7 @@ import { CONTRACT_STATUS, INSTALLMENT_STATUS } from '../utils/constants.js';
 import { toJsDate, getInstallmentRemaining } from '../utils/installmentStatus.js';
 import { getCurrentUser } from '../appState.js';
 import { onlyDigits } from '../utils/validators.js';
-import { getContractInstallments } from './contractService.js';
+import { getInstallmentsForContracts } from './contractService.js';
 import { getCached, invalidateCache, invalidateCacheByPrefix } from '../utils/dataCache.js';
 
 const SETTINGS_REF = doc(db, 'settings', 'calendar');
@@ -262,17 +262,11 @@ export async function getAllBudgetEntries() {
 
 async function getPendingPayments(contracts = []) {
   const activeContracts = contracts.filter((contract) => contract.status !== CONTRACT_STATUS.CANCELLED);
-  const groups = await Promise.all(
-    activeContracts.map(async (contract) => {
-      const installments = await getContractInstallments(contract.id);
-      return installments
-        .filter((installment) => installment.status !== INSTALLMENT_STATUS.CANCELLED)
-        .filter((installment) => getInstallmentRemaining(installment) > 0)
-        .map((installment) => ({ contract, installment }));
-    })
-  );
+  const pairs = await getInstallmentsForContracts(activeContracts);
 
-  return groups.flat();
+  return pairs
+    .filter(({ installment }) => installment.status !== INSTALLMENT_STATUS.CANCELLED)
+    .filter(({ installment }) => getInstallmentRemaining(installment) > 0);
 }
 
 export function groupPendingPaymentsByDate(pendingPayments = []) {

@@ -63,6 +63,10 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
+    match /{path=**}/installments/{installmentId} {
+      allow read, write: if isAuthenticated();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

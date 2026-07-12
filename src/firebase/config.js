@@ -1,6 +1,10 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+} from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -35,6 +39,18 @@ validateConfig();
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+
+function createFirestore() {
+  try {
+    return initializeFirestore(app, {
+      localCache: persistentLocalCache(),
+    });
+  } catch (error) {
+    console.warn('[Firebase] Cache persistente indisponível, usando cache padrão.', error);
+    return getFirestore(app);
+  }
+}
+
+export const db = createFirestore();
 
 export default app;

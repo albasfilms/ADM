@@ -9,7 +9,7 @@ import {
 import { resolveContractEventType } from '../utils/contractEventType.js';
 import { formatCurrency } from '../utils/currency.js';
 import { formatDate } from '../utils/dates.js';
-import { getContractInstallments } from './contractService.js';
+import { getInstallmentsForContracts } from './contractService.js';
 import { getRecentPayments } from './paymentService.js';
 import { isInstallmentOverdue, toJsDate } from '../utils/installmentStatus.js';
 import { buildMonthlyExpected, buildMonthlyReceived } from '../utils/monthlyCharts.js';
@@ -137,13 +137,7 @@ export async function getReportAnalytics() {
   const paidOffContracts = contracts.filter((c) => c.status === CONTRACT_STATUS.PAID_OFF).length;
   const totalContracted = nonCancelled.reduce((s, c) => s + (c.totalAmount || 0), 0);
 
-  const allInstallments = [];
-  for (const contract of nonCancelled.slice(0, 100)) {
-    const installments = await getContractInstallments(contract.id);
-    installments.forEach((inst) => {
-      allInstallments.push({ contract, installment: inst });
-    });
-  }
+  const allInstallments = await getInstallmentsForContracts(nonCancelled.slice(0, 100));
 
   const overdueAll = allInstallments.filter(({ installment }) =>
     isInstallmentOverdue(installment)

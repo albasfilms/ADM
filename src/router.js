@@ -4,17 +4,6 @@ import { createMobileMenuButton } from './components/Header.js';
 import { createLoadingState } from './components/LoadingState.js';
 import { clearDataCache } from './utils/dataCache.js';
 import { resetPrefetchState } from './utils/prefetch.js';
-import { renderLoginPage } from './pages/LoginPage.js';
-import {
-  renderDashboardPage,
-} from './pages/DashboardPage.js';
-import { renderClientsPage } from './pages/ClientsPage.js';
-import { renderContractsPage } from './pages/ContractsPage.js';
-import { renderReportsPage } from './pages/ReportsPage.js';
-import { renderCalendarPage } from './pages/CalendarPage.js';
-import { renderNotesPage } from './pages/NotesPage.js';
-import { renderLinksPage } from './pages/LinksPage.js';
-import { renderBudgetsPage } from './pages/BudgetsPage.js';
 
 const PUBLIC_ROUTES = ['/login'];
 
@@ -22,53 +11,63 @@ const ROUTES = {
   '/': {
     title: 'Dashboard',
     requiresAuth: true,
-    render: renderDashboardPage,
+    load: () => import('./pages/DashboardPage.js'),
+    renderKey: 'renderDashboardPage',
   },
   '/clientes': {
     title: 'Clientes',
     requiresAuth: true,
-    render: renderClientsPage,
+    load: () => import('./pages/ClientsPage.js'),
+    renderKey: 'renderClientsPage',
   },
   '/contratos': {
     title: 'Contratos',
     requiresAuth: true,
-    render: renderContractsPage,
+    load: () => import('./pages/ContractsPage.js'),
+    renderKey: 'renderContractsPage',
   },
   '/calendario': {
     title: 'Calendário',
     requiresAuth: true,
-    render: renderCalendarPage,
+    load: () => import('./pages/CalendarPage.js'),
+    renderKey: 'renderCalendarPage',
   },
   '/relatorios': {
     title: 'Relatórios',
     requiresAuth: true,
-    render: renderReportsPage,
+    load: () => import('./pages/ReportsPage.js'),
+    renderKey: 'renderReportsPage',
   },
   '/notas': {
     title: 'Notas',
     requiresAuth: true,
-    render: renderNotesPage,
+    load: () => import('./pages/NotesPage.js'),
+    renderKey: 'renderNotesPage',
   },
   '/links': {
     title: 'Links',
     requiresAuth: true,
-    render: renderLinksPage,
+    load: () => import('./pages/LinksPage.js'),
+    renderKey: 'renderLinksPage',
   },
   '/orcamentos': {
     title: 'Orçamentos',
     requiresAuth: true,
-    render: renderBudgetsPage,
+    load: () => import('./pages/BudgetsPage.js'),
+    renderKey: 'renderBudgetsPage',
   },
   '/login': {
     title: 'Login',
     requiresAuth: false,
-    render: renderLoginPage,
+    load: () => import('./pages/LoginPage.js'),
+    renderKey: 'renderLoginPage',
   },
 };
 
 let shellElements = null;
 let lastRenderedPath = null;
 let lastAuthSignature = null;
+const loadedModules = new Map();
 
 export function getCurrentPath() {
   const hash = window.location.hash.replace('#', '') || '/';
@@ -163,18 +162,29 @@ function navigate(path, replace = false) {
   }
 }
 
-function renderLogin(route) {
+async function loadRouteModule(route) {
+  if (!loadedModules.has(route.renderKey)) {
+    loadedModules.set(route.renderKey, route.load());
+  }
+  return loadedModules.get(route.renderKey);
+}
+
+async function renderLogin(route) {
   destroyShell();
   const app = document.getElementById('app');
   app.className = '';
   app.innerHTML = '';
+  app.appendChild(createLoadingState('Carregando...'));
+
+  const module = await loadRouteModule(route);
+  app.innerHTML = '';
   const container = document.createElement('div');
   app.appendChild(container);
-  route.render(container);
+  await module[route.renderKey](container);
   document.title = `${route.title} — Albas Films`;
 }
 
-function renderPage(route, path) {
+async function renderPage(route, path) {
   if (!shellElements) {
     buildShell();
   } else {
@@ -190,9 +200,18 @@ function renderPage(route, path) {
 
   const pageContent = shellElements.pageContent;
   pageContent.innerHTML = '';
-  const container = document.createElement('div');
-  pageContent.appendChild(container);
-  route.render(container);
+  pageContent.appendChild(createLoadingState('Carregando...'));
+
+  try {
+    const module = await loadRouteModule(route);
+    const container = document.createElement('div');
+    pageContent.innerHTML = '';
+    pageContent.appendChild(container);
+    await module[route.renderKey](container);
+  } catch (error) {
+    console.error('[Router] Erro ao carregar página:', error);
+    pageContent.innerHTML = '<p class="text-error">Erro ao carregar a página. Tente novamente.</p>';
+  }
 }
 
 export function render() {
@@ -215,6 +234,7 @@ export function render() {
   if (authSignature !== lastAuthSignature) {
     clearDataCache();
     resetPrefetchState();
+    loadedModules.clear();
     destroyShell();
     lastAuthSignature = authSignature;
   }

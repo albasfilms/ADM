@@ -9,7 +9,7 @@ import {
   toJsDate,
   startOfDay,
 } from '../utils/installmentStatus.js';
-import { getContractInstallments } from './contractService.js';
+import { getInstallmentsForContracts } from './contractService.js';
 import { getCached } from '../utils/dataCache.js';
 
 function getMonthRange(year, month) {
@@ -41,13 +41,8 @@ export async function getDashboardData() {
     const totalPending = nonCancelled.reduce((s, c) => s + (c.pendingAmount || 0), 0);
     const totalOverdue = nonCancelled.reduce((s, c) => s + (c.overdueAmount || 0), 0);
 
-    const installmentGroups = await Promise.all(
-      nonCancelled.slice(0, 100).map(async (contract) => {
-        const installments = await getContractInstallments(contract.id);
-        return installments.map((installment) => ({ contract, installment }));
-      })
-    );
-    const allInstallments = installmentGroups.flat();
+    const installmentGroups = await getInstallmentsForContracts(nonCancelled.slice(0, 100));
+    const allInstallments = installmentGroups;
 
   const { start: monthStart, end: monthEnd } = getMonthRange(currentYear, currentMonth);
 

@@ -4,7 +4,7 @@ function asset(filename) {
   return `${BASE}/${encodeURI(filename)}`;
 }
 
-export const BRAND_LOGO = asset('Logo nova.PNG');
+export const BRAND_LOGO = asset('logo-nova.webp');
 
 export const BRAND_GALLERY = [
   { src: asset('Casamento .webp'), alt: 'Casamentos' },
