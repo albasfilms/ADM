@@ -5,6 +5,7 @@ const PAGE_TITLES = {
   '/': 'Dashboard',
   '/clientes': 'Clientes',
   '/contratos': 'Contratos',
+  '/calendario': 'Calendário',
   '/relatorios': 'Relatórios',
 };
 

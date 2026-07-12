@@ -407,6 +407,35 @@
     margin: 0;
   }
 
+  .calendar-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-toolbar__label {
+    min-width: 0;
+    font-size: var(--font-size-base);
+  }
+
+  .calendar-day {
+    min-height: 56px;
+    padding: var(--space-1);
+  }
+
+  .calendar-weekdays,
+  .calendar-days {
+    gap: var(--space-1);
+  }
+
+  .calendar-year-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+  }
+
+  .calendar-header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
   .pagination {
     flex-direction: column;
     gap: var(--space-3);
@@ -511,6 +540,10 @@
 
   .brand-hero__title {
     font-size: var(--font-size-base);
+  }
+
+  .calendar-year-grid {
+    grid-template-columns: 1fr;
   }
 }
 

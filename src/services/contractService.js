@@ -143,7 +143,7 @@ function buildContractDoc(data, client, totalAmount) {
     driveLink: data.driveLink?.trim() || '',
     contractLink: data.contractLink?.trim() || '',
     notes: data.notes?.trim() || '',
-    status: data.status || CONTRACT_STATUS.BUDGET,
+    status: data.status || CONTRACT_STATUS.CONFIRMED,
     receivedAmount: 0,
     pendingAmount: totalAmount,
     overdueAmount: 0,

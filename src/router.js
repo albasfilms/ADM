@@ -9,6 +9,7 @@ import {
 import { renderClientsPage } from './pages/ClientsPage.js';
 import { renderContractsPage } from './pages/ContractsPage.js';
 import { renderReportsPage } from './pages/ReportsPage.js';
+import { renderCalendarPage } from './pages/CalendarPage.js';
 
 const PUBLIC_ROUTES = ['/login'];
 
@@ -27,6 +28,11 @@ const ROUTES = {
     title: 'Contratos',
     requiresAuth: true,
     render: renderContractsPage,
+  },
+  '/calendario': {
+    title: 'Calendário',
+    requiresAuth: true,
+    render: renderCalendarPage,
   },
   '/relatorios': {
     title: 'Relatórios',
@@ -51,6 +57,7 @@ function resolveRoute(path) {
 
   if (path.startsWith('/clientes')) return ROUTES['/clientes'];
   if (path.startsWith('/contratos')) return ROUTES['/contratos'];
+  if (path.startsWith('/calendario')) return ROUTES['/calendario'];
   if (path.startsWith('/relatorios')) return ROUTES['/relatorios'];
 
   return ROUTES['/'];

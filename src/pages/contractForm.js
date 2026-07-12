@@ -5,7 +5,6 @@ import {
 } from '../services/contractService.js';
 import {
   CONTRACT_STATUS,
-  CONTRACT_STATUS_LABELS,
   SERVICE_TYPES,
   SERVICE_TYPE_LABELS,
   PAYMENT_METHODS,
@@ -204,13 +203,10 @@ function paymentMethodOptions(selected = '') {
     .join('')}`;
 }
 
-function statusOptions(selected = CONTRACT_STATUS.BUDGET) {
-  return Object.entries(CONTRACT_STATUS_LABELS)
-    .map(
-      ([value, label]) =>
-        `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`
-    )
-    .join('');
+function getContractFormStatus(contract) {
+  if (contract?.status === CONTRACT_STATUS.CANCELLED) return CONTRACT_STATUS.CANCELLED;
+  if (contract?.status === CONTRACT_STATUS.FINISHED) return CONTRACT_STATUS.FINISHED;
+  return CONTRACT_STATUS.CONFIRMED;
 }
 
 function buildItemRow(item = {}, index = 0) {
@@ -254,33 +250,40 @@ function collectItems(form) {
   return items;
 }
 
-function getFormData(form) {
+function getFormData(form, existingContract = null) {
+  const getValue = (name) => form.querySelector(`[name="${name}"]`)?.value;
+
   return {
-    clientId: form.querySelector('[name="clientId"]').value,
-    title: form.querySelector('[name="title"]').value,
-    serviceType: form.querySelector('[name="serviceType"]').value,
-    description: form.querySelector('[name="description"]').value,
-    eventDate: form.querySelector('[name="eventDate"]').value,
-    eventTime: form.querySelector('[name="eventTime"]').value,
-    eventLocation: form.querySelector('[name="eventLocation"]').value,
-    city: form.querySelector('[name="city"]').value,
-    state: form.querySelector('[name="state"]').value,
-    closingDate: form.querySelector('[name="closingDate"]').value,
-    entryPercent: form.querySelector('[name="entryPercent"]').value,
-    entryAmount: parseCurrencyInput(form.querySelector('[name="entryAmount"]').value),
-    entryPaymentMethod: form.querySelector('[name="entryPaymentMethod"]').value,
+    clientId: getValue('clientId'),
+    title: getValue('title'),
+    serviceType: getValue('serviceType'),
+    description: getValue('description'),
+    eventDate: getValue('eventDate'),
+    eventTime: getValue('eventTime'),
+    eventLocation: getValue('eventLocation'),
+    city: getValue('city'),
+    state: getValue('state'),
+    closingDate: getValue('closingDate'),
+    entryPercent: getValue('entryPercent') ?? existingContract?.entryPercent ?? '',
+    entryAmount: getValue('entryAmount')
+      ? parseCurrencyInput(getValue('entryAmount'))
+      : existingContract?.entryAmount || 0,
+    entryPaymentMethod: getValue('entryPaymentMethod') ?? existingContract?.entryPaymentMethod ?? '',
     paymentPlanType: getSelectedPaymentPlanType(form),
-    installmentCount: form.querySelector('[name="installmentCount"]').value,
-    firstDueDate: form.querySelector('[name="firstDueDate"]').value,
-    installmentIntervalMonths: form.querySelector('[name="installmentIntervalMonths"]').value,
-    driveLink: form.querySelector('[name="driveLink"]').value,
-    contractLink: form.querySelector('[name="contractLink"]').value,
-    notes: form.querySelector('[name="notes"]').value,
-    status: form.querySelector('[name="status"]').value,
+    installmentCount: getValue('installmentCount') ?? existingContract?.installmentCount ?? '',
+    firstDueDate:
+      getValue('firstDueDate') ||
+      (existingContract?.firstDueDate ? toDateInputValue(existingContract.firstDueDate) : ''),
+    installmentIntervalMonths:
+      getValue('installmentIntervalMonths') ?? existingContract?.installmentIntervalMonths ?? 1,
+    driveLink: getValue('driveLink'),
+    contractLink: getValue('contractLink'),
+    notes: getValue('notes'),
+    status: getValue('status') || getContractFormStatus(existingContract),
   };
 }
 
-function validateContractForm(data, items) {
+function validateContractForm(data, items, { isEdit = false } = {}) {
   const errors = {};
   if (!data.clientId) errors.clientId = 'Selecione um cliente.';
   if (!data.title?.trim()) errors.title = 'O título é obrigatório.';
@@ -291,13 +294,15 @@ function validateContractForm(data, items) {
   if (data.entryPercent && (data.entryPercent < 0 || data.entryPercent > 100)) {
     errors.entryPercent = 'Percentual deve ser entre 0 e 100.';
   }
-  if (data.paymentPlanType === PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING && !data.eventDate) {
-    errors.eventDate = 'Informe a data do evento para calcular as parcelas antes do casamento.';
-  }
-  if (data.paymentPlanType === PAYMENT_PLAN_TYPES.CREDIT_CARD) {
-    const count = parseInt(data.installmentCount, 10);
-    if (!count || count < 1 || count > 10) {
-      errors.installmentCount = 'Informe entre 1 e 10 parcelas no cartão.';
+  if (!isEdit) {
+    if (data.paymentPlanType === PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING && !data.eventDate) {
+      errors.eventDate = 'Informe a data do evento para calcular as parcelas antes do casamento.';
+    }
+    if (data.paymentPlanType === PAYMENT_PLAN_TYPES.CREDIT_CARD) {
+      const count = parseInt(data.installmentCount, 10);
+      if (!count || count < 1 || count > 10) {
+        errors.installmentCount = 'Informe entre 1 e 10 parcelas no cartão.';
+      }
     }
   }
   return errors;
@@ -496,10 +501,7 @@ export function openContractFormModal({
           <label class="form-field__label">Descrição</label>
           <textarea class="form-field__input form-field__textarea" name="description" rows="2">${escapeHtml(contract?.description || '')}</textarea>
         </div>
-        <div class="form-field">
-          <label class="form-field__label">Status</label>
-          <select class="form-field__input" name="status">${statusOptions(contract?.status)}</select>
-        </div>
+        <input type="hidden" name="status" value="${getContractFormStatus(contract)}" />
       </div>
     </div>
 
@@ -676,7 +678,9 @@ export function openContractFormModal({
   }
 
   bindItemEvents();
-  applyPaymentPlanPreset(form);
+  if (!isEdit) {
+    applyPaymentPlanPreset(form);
+  }
   updateTotalDisplay(form);
 
   form.querySelector('[name="paymentPlanType"]')?.addEventListener('change', () => {
@@ -735,21 +739,27 @@ export function openContractFormModal({
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const data = getFormData(form);
-    const itemsCollected = collectItems(form);
-    const errors = validateContractForm(data, itemsCollected);
-
-    if (Object.keys(errors).length > 0) {
-      showFormErrors(form, errors);
-      return;
-    }
-
-    const client = clients.find((c) => c.id === data.clientId);
     const submitBtn = footer.querySelector('[type="submit"]');
-    submitBtn.disabled = true;
-    submitBtn.classList.add('btn--loading');
 
     try {
+      const data = getFormData(form, contract);
+      const itemsCollected = collectItems(form);
+      const errors = validateContractForm(data, itemsCollected, { isEdit });
+
+      if (Object.keys(errors).length > 0) {
+        showFormErrors(form, errors);
+        return;
+      }
+
+      const client = clients.find((c) => c.id === data.clientId);
+      if (!client) {
+        showToast('Cliente não encontrado.', 'error');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.classList.add('btn--loading');
+
       if (isEdit) {
         await updateContract(contract.id, data, itemsCollected, client, contract);
         showToast('Contrato atualizado.', 'success');
@@ -764,6 +774,7 @@ export function openContractFormModal({
     } catch (error) {
       console.error('[Contract] Erro ao salvar:', error);
       showToast(error.message || 'Erro ao salvar contrato.', 'error');
+    } finally {
       submitBtn.disabled = false;
       submitBtn.classList.remove('btn--loading');
     }
