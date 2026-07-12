@@ -21,6 +21,10 @@
   .contracts-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  #detail-actions {
+    width: 100%;
+  }
 }
 
 /* ==========================================================================
@@ -80,6 +84,21 @@
 
   .chart-container {
     height: 240px;
+  }
+
+  .contracts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .card__header--split {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
+  #detail-actions .btn {
+    flex: 1 1 calc(50% - var(--space-1));
+    min-width: 140px;
   }
 }
 
@@ -230,6 +249,100 @@
   .summary-card__value {
     font-size: var(--font-size-sm);
     line-height: 1.2;
+  }
+
+  /* Carrossel horizontal — métricas em relatórios e dashboard */
+  #report-summary .summary-grid,
+  #report-analytics .summary-grid {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    margin-inline: calc(-1 * var(--space-4));
+    padding-inline: var(--space-4);
+  }
+
+  #report-summary .summary-grid::-webkit-scrollbar,
+  #report-analytics .summary-grid::-webkit-scrollbar {
+    display: none;
+  }
+
+  #report-summary .summary-grid .summary-card,
+  #report-analytics .summary-grid .summary-card {
+    flex: 0 0 148px;
+    min-width: 148px;
+    scroll-snap-align: start;
+  }
+
+  .card__header--clickable {
+    flex-wrap: wrap;
+  }
+
+  .card__header-title-group {
+    max-width: 100%;
+  }
+
+  .events-counter {
+    flex-shrink: 0;
+  }
+
+  .dashboard-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dashboard-filters .btn,
+  .dashboard-filters .dashboard-filter-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .event-box__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
+  .event-box__timer {
+    min-width: 0;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .contract-card__footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  .contract-card__signed-link {
+    max-width: 100%;
+    word-break: break-word;
+  }
+
+  #detail-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  #detail-actions .btn {
+    width: 100%;
+    min-width: 0;
+    flex: none;
+    justify-content: center;
+  }
+
+  #dashboard-events .events-carousel-wrap {
+    margin-inline: calc(-1 * var(--space-2));
+  }
+
+  #dashboard-events .events-carousel {
+    padding-inline: var(--space-2);
+  }
+
+  .events-carousel__btn {
+    display: none;
   }
 
   .contract-item-row {
@@ -403,10 +516,6 @@
 
   .brand-hero__title {
     font-size: var(--font-size-base);
-  }
-
-  .contracts-grid {
-    grid-template-columns: 1fr;
   }
 }
 

@@ -21,6 +21,7 @@ import {
   PAGE_SIZE,
 } from '../utils/constants.js';
 import { sumCents } from '../utils/currency.js';
+import { createAuditLog } from './auditService.js';
 
 const COLLECTION = 'contracts';
 
@@ -97,17 +98,17 @@ export async function getContractById(id) {
 }
 
 export async function getContractItems(contractId) {
-  const snapshot = await getDocs(
-    query(collection(db, COLLECTION, contractId, 'items'), orderBy('order', 'asc'))
-  );
-  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const snapshot = await getDocs(collection(db, COLLECTION, contractId, 'items'));
+  return snapshot.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 
 export async function getContractInstallments(contractId) {
-  const snapshot = await getDocs(
-    query(collection(db, COLLECTION, contractId, 'installments'), orderBy('number', 'asc'))
-  );
-  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const snapshot = await getDocs(collection(db, COLLECTION, contractId, 'installments'));
+  return snapshot.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
 }
 
 export async function getContractFull(contractId) {
@@ -235,4 +236,50 @@ export async function finalizeContract(contractId) {
     status: CONTRACT_STATUS.FINISHED,
     updatedAt: serverTimestamp(),
   });
+}
+
+export async function deleteContract(contractId, user) {
+  const contract = await getContractById(contractId);
+  if (!contract) throw new Error('Contrato não encontrado.');
+
+  const items = await getContractItems(contractId);
+  const installments = await getContractInstallments(contractId);
+  const refsToDelete = [];
+
+  for (const inst of installments) {
+    const paymentsSnap = await getDocs(
+      collection(db, COLLECTION, contractId, 'installments', inst.id, 'payments')
+    );
+    paymentsSnap.docs.forEach((paymentDoc) => {
+      refsToDelete.push(
+        doc(db, COLLECTION, contractId, 'installments', inst.id, 'payments', paymentDoc.id)
+      );
+    });
+    refsToDelete.push(doc(db, COLLECTION, contractId, 'installments', inst.id));
+  }
+
+  items.forEach((item) => {
+    refsToDelete.push(doc(db, COLLECTION, contractId, 'items', item.id));
+  });
+  refsToDelete.push(doc(db, COLLECTION, contractId));
+
+  for (let i = 0; i < refsToDelete.length; i += 500) {
+    const batch = writeBatch(db);
+    refsToDelete.slice(i, i + 500).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
+
+  if (user) {
+    await createAuditLog({
+      action: 'contract_deleted',
+      entityType: 'contract',
+      entityId: contractId,
+      previousData: {
+        title: contract.title,
+        clientName: contract.clientName,
+        totalAmount: contract.totalAmount,
+      },
+      user,
+    });
+  }
 }

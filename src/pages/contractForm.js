@@ -10,6 +10,8 @@ import {
   SERVICE_TYPE_LABELS,
   PAYMENT_METHODS,
   PAYMENT_METHOD_LABELS,
+  PAYMENT_PLAN_TYPES,
+  PAYMENT_PLAN_LABELS,
   BRAZILIAN_STATES,
 } from '../utils/constants.js';
 import {
@@ -26,6 +28,163 @@ import {
 } from '../utils/installments.js';
 import { escapeHtml, renderIcons, showToast } from '../utils/dom.js';
 import { toDateInputValue } from '../utils/dates.js';
+import {
+  addMonths,
+  getFirstDueBeforeEvent,
+  getPaymentPlanParams,
+  parseFormDate,
+  toDateInputString,
+} from '../utils/paymentPlanPresets.js';
+
+function paymentPlanTypeOptions(selected = PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING) {
+  return Object.entries(PAYMENT_PLAN_LABELS)
+    .map(
+      ([value, label]) =>
+        `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`
+    )
+    .join('');
+}
+
+function getSelectedPaymentPlanType(form) {
+  return form.querySelector('[name="paymentPlanType"]')?.value || PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING;
+}
+
+function setFieldVisibility(form, visibleFields) {
+  const map = {
+    entryPercent: '[name="entryPercent"]',
+    entryAmount: '[name="entryAmount"]',
+    entryPaymentMethod: '[name="entryPaymentMethod"]',
+    installmentCount: '[name="installmentCount"]',
+    firstDueDate: '[name="firstDueDate"]',
+    intervalMonths: '[name="installmentIntervalMonths"]',
+  };
+
+  Object.entries(map).forEach(([key, selector]) => {
+    const field = form.querySelector(selector)?.closest('.form-field');
+    if (field) field.hidden = !visibleFields.includes(key);
+  });
+}
+
+function syncFirstDueFromEvent(form) {
+  if (getSelectedPaymentPlanType(form) !== PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING) return;
+
+  const eventDate = parseFormDate(form.querySelector('[name="eventDate"]')?.value);
+  const installmentCount = parseInt(form.querySelector('[name="installmentCount"]')?.value, 10) || 4;
+  const firstDueDate = form.querySelector('[name="firstDueDate"]');
+  const hint = form.querySelector('#first-due-hint');
+  if (!firstDueDate) return;
+
+  if (eventDate) {
+    firstDueDate.value = toDateInputString(getFirstDueBeforeEvent(eventDate, installmentCount));
+    firstDueDate.readOnly = true;
+    if (hint) {
+      hint.textContent = `Primeira parcela ${installmentCount} mês(es) antes do evento (${formatDateLabel(eventDate)}).`;
+      hint.hidden = false;
+    }
+  } else {
+    firstDueDate.readOnly = false;
+    if (hint) {
+      hint.textContent = 'Informe a data do evento para calcular os vencimentos automaticamente.';
+      hint.hidden = false;
+    }
+  }
+}
+
+function formatDateLabel(date) {
+  return date.toLocaleDateString('pt-BR');
+}
+
+function applyPaymentPlanPreset(form) {
+  const planType = getSelectedPaymentPlanType(form);
+  const entryPercent = form.querySelector('[name="entryPercent"]');
+  const entryAmount = form.querySelector('[name="entryAmount"]');
+  const entryPaymentMethod = form.querySelector('[name="entryPaymentMethod"]');
+  const installmentCount = form.querySelector('[name="installmentCount"]');
+  const installmentLabel = form.querySelector('#installment-count-label');
+  const firstDueDate = form.querySelector('[name="firstDueDate"]');
+  const firstDueLabel = form.querySelector('#first-due-label');
+  const intervalMonths = form.querySelector('[name="installmentIntervalMonths"]');
+  const hint = form.querySelector('#first-due-hint');
+  const closingDate = parseFormDate(form.querySelector('[name="closingDate"]')?.value) || new Date();
+
+  if (planType === PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING) {
+    setFieldVisibility(form, [
+      'entryPercent',
+      'entryAmount',
+      'entryPaymentMethod',
+      'installmentCount',
+      'firstDueDate',
+      'intervalMonths',
+    ]);
+    if (entryPercent) entryPercent.value = '30';
+    if (entryPaymentMethod) entryPaymentMethod.value = PAYMENT_METHODS.PIX;
+    if (installmentCount) {
+      installmentCount.value = '4';
+      installmentCount.min = '1';
+      installmentCount.max = '24';
+    }
+    if (installmentLabel) installmentLabel.textContent = 'Nº de parcelas antes do casamento';
+    if (firstDueLabel) firstDueLabel.textContent = 'Primeiro vencimento';
+    if (intervalMonths) intervalMonths.value = '1';
+    syncFirstDueFromEvent(form);
+    updateTotalDisplay(form);
+    return;
+  }
+
+  if (planType === PAYMENT_PLAN_TYPES.CREDIT_CARD) {
+    setFieldVisibility(form, ['installmentCount', 'firstDueDate']);
+    if (entryPercent) entryPercent.value = '0';
+    if (entryAmount) entryAmount.value = '';
+    if (entryPaymentMethod) entryPaymentMethod.value = PAYMENT_METHODS.CREDIT_CARD;
+    if (installmentCount) {
+      installmentCount.value = '10';
+      installmentCount.min = '1';
+      installmentCount.max = '10';
+    }
+    if (installmentLabel) installmentLabel.textContent = 'Parcelas no cartão (até 10x)';
+    if (firstDueLabel) firstDueLabel.textContent = 'Primeira parcela no cartão';
+    if (firstDueDate) {
+      firstDueDate.readOnly = false;
+      if (!firstDueDate.value) firstDueDate.value = toDateInputString(addMonths(closingDate, 1));
+    }
+    if (hint) hint.hidden = true;
+    return;
+  }
+
+  setFieldVisibility(form, ['entryPaymentMethod']);
+  if (entryPercent) entryPercent.value = '100';
+  if (installmentCount) installmentCount.value = '0';
+  if (entryPaymentMethod && !entryPaymentMethod.value) {
+    entryPaymentMethod.value = PAYMENT_METHODS.PIX;
+  }
+  if (hint) hint.hidden = true;
+  updateTotalDisplay(form);
+}
+
+function buildPaymentPlan(form, data, totalCents) {
+  const planType = getSelectedPaymentPlanType(form);
+  const params = getPaymentPlanParams({ planType, totalCents, data });
+  const plan = calculatePaymentPlan({
+    totalCents,
+    ...params,
+  });
+
+  if (planType === PAYMENT_PLAN_TYPES.CREDIT_CARD) {
+    return plan.map((inst) => ({
+      ...inst,
+      description: inst.number === 0 ? inst.description : `Cartão ${inst.number}/${params.installmentCount}`,
+    }));
+  }
+
+  if (planType === PAYMENT_PLAN_TYPES.CASH) {
+    return plan.map((inst) => ({
+      ...inst,
+      description: 'Pagamento à vista',
+    }));
+  }
+
+  return plan;
+}
 
 function serviceTypeOptions(selected = '') {
   return Object.entries(SERVICE_TYPE_LABELS)
@@ -110,6 +269,7 @@ function getFormData(form) {
     entryPercent: form.querySelector('[name="entryPercent"]').value,
     entryAmount: parseCurrencyInput(form.querySelector('[name="entryAmount"]').value),
     entryPaymentMethod: form.querySelector('[name="entryPaymentMethod"]').value,
+    paymentPlanType: getSelectedPaymentPlanType(form),
     installmentCount: form.querySelector('[name="installmentCount"]').value,
     firstDueDate: form.querySelector('[name="firstDueDate"]').value,
     installmentIntervalMonths: form.querySelector('[name="installmentIntervalMonths"]').value,
@@ -130,6 +290,15 @@ function validateContractForm(data, items) {
   if (total <= 0) errors.items = 'O valor total deve ser maior que zero.';
   if (data.entryPercent && (data.entryPercent < 0 || data.entryPercent > 100)) {
     errors.entryPercent = 'Percentual deve ser entre 0 e 100.';
+  }
+  if (data.paymentPlanType === PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING && !data.eventDate) {
+    errors.eventDate = 'Informe a data do evento para calcular as parcelas antes do casamento.';
+  }
+  if (data.paymentPlanType === PAYMENT_PLAN_TYPES.CREDIT_CARD) {
+    const count = parseInt(data.installmentCount, 10);
+    if (!count || count < 1 || count > 10) {
+      errors.installmentCount = 'Informe entre 1 e 10 parcelas no cartão.';
+    }
   }
   return errors;
 }
@@ -153,15 +322,27 @@ function updateTotalDisplay(form) {
   const total = sumCents(items.map((i) => i.amount));
   const totalEl = form.querySelector('#contract-total');
   if (totalEl) totalEl.textContent = formatCurrency(total);
+  syncEntryFromPercent(form, total);
   return total;
 }
 
 function syncEntryFromPercent(form, totalCents) {
-  const percent = parseFloat(form.querySelector('[name="entryPercent"]').value) || 0;
+  const percentInput = form.querySelector('[name="entryPercent"]');
   const entryInput = form.querySelector('[name="entryAmount"]');
+  if (!percentInput || !entryInput) return;
+
+  const planType = getSelectedPaymentPlanType(form);
+  if (planType === PAYMENT_PLAN_TYPES.CREDIT_CARD) {
+    entryInput.value = '';
+    return;
+  }
+
+  const percent = parseFloat(percentInput.value) || 0;
   if (percent > 0 && totalCents > 0) {
-    const entry = Math.round(totalCents * percent / 100);
+    const entry = Math.round((totalCents * percent) / 100);
     entryInput.value = formatCurrencyInput(entry);
+  } else if (percent === 0) {
+    entryInput.value = '';
   }
 }
 
@@ -328,6 +509,7 @@ export function openContractFormModal({
         <div class="form-field">
           <label class="form-field__label">Data do evento</label>
           <input class="form-field__input" type="date" name="eventDate" value="${toDateInputValue(contract?.eventDate)}" />
+          <span class="form-field__error" data-error="eventDate" hidden></span>
         </div>
         <div class="form-field">
           <label class="form-field__label">Horário</label>
@@ -378,34 +560,40 @@ export function openContractFormModal({
     <div class="form-section">
       <h3 class="form-section__title">Entrada e parcelamento</h3>
       <div class="form-grid">
+        <div class="form-field form-field--full">
+          <label class="form-field__label">Forma de pagamento</label>
+          <select class="form-field__input" name="paymentPlanType">
+            ${paymentPlanTypeOptions()}
+          </select>
+        </div>
         <div class="form-field">
           <label class="form-field__label">Percentual de entrada (%)</label>
           <input class="form-field__input" type="number" name="entryPercent" min="0" max="100" step="1"
-            value="${contract?.entryPercent ?? 30}" />
+            value="30" />
           <span class="form-field__error" data-error="entryPercent" hidden></span>
         </div>
         <div class="form-field">
           <label class="form-field__label">Valor da entrada</label>
-          <input class="form-field__input currency-input" name="entryAmount"
-            value="${contract?.entryAmount ? formatCurrencyInput(contract.entryAmount) : ''}" />
+          <input class="form-field__input" name="entryAmount" readonly
+            title="Calculado automaticamente pelo percentual de entrada" />
         </div>
         <div class="form-field">
           <label class="form-field__label">Forma de pagamento da entrada</label>
-          <select class="form-field__input" name="entryPaymentMethod">${paymentMethodOptions(contract?.entryPaymentMethod)}</select>
+          <select class="form-field__input" name="entryPaymentMethod">${paymentMethodOptions(PAYMENT_METHODS.PIX)}</select>
         </div>
         <div class="form-field">
-          <label class="form-field__label">Nº de parcelas restantes</label>
-          <input class="form-field__input" type="number" name="installmentCount" min="0" max="60"
-            value="${contract?.installmentCount ?? 5}" />
+          <label class="form-field__label" id="installment-count-label">Nº de parcelas antes do casamento</label>
+          <input class="form-field__input" type="number" name="installmentCount" min="1" max="24" value="4" />
+          <span class="form-field__error" data-error="installmentCount" hidden></span>
         </div>
         <div class="form-field">
-          <label class="form-field__label">Primeiro vencimento</label>
+          <label class="form-field__label" id="first-due-label">Primeiro vencimento</label>
           <input class="form-field__input" type="date" name="firstDueDate" />
+          <p class="form-field__hint" id="first-due-hint"></p>
         </div>
         <div class="form-field">
           <label class="form-field__label">Intervalo (meses)</label>
-          <input class="form-field__input" type="number" name="installmentIntervalMonths" min="1" max="12"
-            value="${contract?.installmentIntervalMonths ?? 1}" />
+          <input class="form-field__input" type="number" name="installmentIntervalMonths" min="1" max="12" value="1" />
         </div>
       </div>
     </div>
@@ -457,11 +645,19 @@ export function openContractFormModal({
 
   form.querySelectorAll('.currency-input').forEach(bindCurrencyInput);
 
+  form.addEventListener('input', (event) => {
+    if (event.target.classList.contains('currency-input')) {
+      updateTotalDisplay(form);
+    }
+  });
+
   form.querySelector('#add-item-btn')?.addEventListener('click', () => {
     const container = form.querySelector('#contract-items');
     container.insertAdjacentHTML('beforeend', buildItemRow({}, itemIndex));
     itemIndex += 1;
     renderIcons(container);
+    const newRow = container.lastElementChild;
+    newRow?.querySelectorAll('.currency-input').forEach(bindCurrencyInput);
     bindItemEvents();
   });
 
@@ -477,16 +673,36 @@ export function openContractFormModal({
         updateTotalDisplay(form);
       };
     });
-    form.querySelectorAll('.currency-input').forEach((input) => {
-      input.addEventListener('input', () => updateTotalDisplay(form));
-    });
   }
 
   bindItemEvents();
+  applyPaymentPlanPreset(form);
   updateTotalDisplay(form);
 
+  form.querySelector('[name="paymentPlanType"]')?.addEventListener('change', () => {
+    applyPaymentPlanPreset(form);
+  });
+
+  form.querySelector('[name="eventDate"]')?.addEventListener('change', () => {
+    syncFirstDueFromEvent(form);
+  });
+
+  form.querySelector('[name="closingDate"]')?.addEventListener('change', () => {
+    if (getSelectedPaymentPlanType(form) === PAYMENT_PLAN_TYPES.CREDIT_CARD) {
+      const firstDueDate = form.querySelector('[name="firstDueDate"]');
+      const closingDate = parseFormDate(form.querySelector('[name="closingDate"]')?.value);
+      if (firstDueDate && closingDate && !firstDueDate.value) {
+        firstDueDate.value = toDateInputString(addMonths(closingDate, 1));
+      }
+    }
+  });
+
+  form.querySelector('[name="installmentCount"]')?.addEventListener('input', () => {
+    syncFirstDueFromEvent(form);
+  });
+
   form.querySelector('[name="entryPercent"]')?.addEventListener('input', () => {
-    syncEntryFromPercent(form, updateTotalDisplay(form));
+    updateTotalDisplay(form);
   });
 
   footer.querySelector('[data-action="cancel"]').addEventListener('click', close);
@@ -501,18 +717,7 @@ export function openContractFormModal({
     }
 
     const totalCents = sumCents(itemsCollected.map((i) => i.amount));
-    const firstDue = data.firstDueDate ? new Date(data.firstDueDate) : new Date();
-    const closingDate = data.closingDate ? new Date(data.closingDate) : new Date();
-
-    const plan = calculatePaymentPlan({
-      totalCents,
-      entryPercent: parseFloat(data.entryPercent) || 0,
-      entryAmountCents: data.entryAmount || null,
-      installmentCount: parseInt(data.installmentCount, 10) || 0,
-      firstDueDate: firstDue,
-      intervalMonths: parseInt(data.installmentIntervalMonths, 10) || 1,
-      entryDueDate: closingDate,
-    });
+    const plan = buildPaymentPlan(form, data, totalCents);
 
     const client = clients.find((c) => c.id === data.clientId);
 
@@ -550,15 +755,7 @@ export function openContractFormModal({
         showToast('Contrato atualizado.', 'success');
       } else {
         const totalCents = sumCents(itemsCollected.map((i) => i.amount));
-        const plan = calculatePaymentPlan({
-          totalCents,
-          entryPercent: parseFloat(data.entryPercent) || 0,
-          entryAmountCents: data.entryAmount || null,
-          installmentCount: parseInt(data.installmentCount, 10) || 0,
-          firstDueDate: data.firstDueDate ? new Date(data.firstDueDate) : new Date(),
-          intervalMonths: parseInt(data.installmentIntervalMonths, 10) || 1,
-          entryDueDate: data.closingDate ? new Date(data.closingDate) : new Date(),
-        });
+        const plan = buildPaymentPlan(form, data, totalCents);
         await createContract(data, itemsCollected, plan, client);
         showToast('Contrato criado com sucesso.', 'success');
       }

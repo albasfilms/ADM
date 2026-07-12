@@ -1,6 +1,6 @@
 import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase/config.js';
-import { CLIENT_STATUS, CONTRACT_STATUS } from '../utils/constants.js';
+import { CONTRACT_STATUS } from '../utils/constants.js';
 import {
   isDueToday,
   isDueWithinDays,
@@ -10,44 +10,32 @@ import {
   startOfDay,
 } from '../utils/installmentStatus.js';
 import { getContractInstallments } from './contractService.js';
-import { getRecentPayments } from './paymentService.js';
 
-const ACTIVE_CONTRACT_STATUSES = [
-  CONTRACT_STATUS.CONFIRMED,
-  CONTRACT_STATUS.IN_PROGRESS,
-  CONTRACT_STATUS.AWAITING_ENTRY,
-  CONTRACT_STATUS.AWAITING_SIGNATURE,
-  CONTRACT_STATUS.FINISHED,
-  CONTRACT_STATUS.PAID_OFF,
-  CONTRACT_STATUS.BUDGET,
-];
+function getMonthRange(year, month) {
+  return {
+    start: new Date(year, month, 1),
+    end: new Date(year, month + 1, 0, 23, 59, 59, 999),
+  };
+}
+
+function isDateInMonth(value, year, month) {
+  const date = toJsDate(value);
+  if (!date) return false;
+  const { start, end } = getMonthRange(year, month);
+  return date >= start && date <= end;
+}
 
 export async function getDashboardData() {
-  const [clientsSnap, contractsSnap] = await Promise.all([
-    getDocs(collection(db, 'clients')),
-    getDocs(query(collection(db, 'contracts'), orderBy('createdAt', 'desc'), limit(500))),
-  ]);
+  const contractsSnap = await getDocs(
+    query(collection(db, 'contracts'), orderBy('createdAt', 'desc'), limit(500))
+  );
 
-  let recentPayments = [];
-  try {
-    recentPayments = await getRecentPayments(8);
-  } catch (error) {
-    console.warn('[Dashboard] Pagamentos recentes indisponíveis:', error);
-  }
-
-  const clients = clientsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
   const contracts = contractsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-  const activeClients = clients.filter((c) => c.status === CLIENT_STATUS.ACTIVE).length;
-  const activeContracts = contracts.filter(
-    (c) => c.status !== CONTRACT_STATUS.CANCELLED && c.status !== CONTRACT_STATUS.PAID_OFF
-  ).length;
-  const paidOffContracts = contracts.filter((c) => c.status === CONTRACT_STATUS.PAID_OFF).length;
-
   const nonCancelled = contracts.filter((c) => c.status !== CONTRACT_STATUS.CANCELLED);
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
 
-  const totalContracted = nonCancelled.reduce((s, c) => s + (c.totalAmount || 0), 0);
-  const totalReceived = nonCancelled.reduce((s, c) => s + (c.receivedAmount || 0), 0);
   const totalPending = nonCancelled.reduce((s, c) => s + (c.pendingAmount || 0), 0);
   const totalOverdue = nonCancelled.reduce((s, c) => s + (c.overdueAmount || 0), 0);
 
@@ -59,9 +47,7 @@ export async function getDashboardData() {
     });
   }
 
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  const { start: monthStart, end: monthEnd } = getMonthRange(currentYear, currentMonth);
 
   const expectedThisMonth = allInstallments.reduce((sum, { installment }) => {
     const due = toJsDate(installment.dueDate);
@@ -71,14 +57,33 @@ export async function getDashboardData() {
     return sum;
   }, 0);
 
+  const closedThisMonthContracts = nonCancelled.filter((c) =>
+    isDateInMonth(c.closingDate, currentYear, currentMonth)
+  );
+
+  const pendingContracts = nonCancelled
+    .filter((c) => (c.pendingAmount || 0) > 0)
+    .sort((a, b) => (b.pendingAmount || 0) - (a.pendingAmount || 0));
+
+  const overdueContracts = nonCancelled
+    .filter((c) => (c.overdueAmount || 0) > 0)
+    .sort((a, b) => (b.overdueAmount || 0) - (a.overdueAmount || 0));
+
+  const expectedThisMonthInstallments = allInstallments
+    .filter(({ installment }) => {
+      const due = toJsDate(installment.dueDate);
+      const remaining = getInstallmentRemaining(installment);
+      return due && remaining > 0 && due >= monthStart && due <= monthEnd;
+    })
+    .sort((a, b) => toJsDate(a.installment.dueDate) - toJsDate(b.installment.dueDate));
+
+  const dueInstallments = allInstallments
+    .filter(({ installment }) => getInstallmentRemaining(installment) > 0)
+    .sort((a, b) => toJsDate(a.installment.dueDate) - toJsDate(b.installment.dueDate));
+
   const overdueInstallments = allInstallments.filter(({ installment }) =>
     isInstallmentOverdue(installment)
   );
-
-  const upcomingDue = allInstallments
-    .filter(({ installment }) => isDueWithinDays(installment, 30))
-    .sort((a, b) => toJsDate(a.installment.dueDate) - toJsDate(b.installment.dueDate))
-    .slice(0, 8);
 
   const dueToday = allInstallments.filter(({ installment }) => isDueToday(installment));
   const dueWeek = allInstallments.filter(({ installment }) => isDueWithinDays(installment, 7));
@@ -88,34 +93,37 @@ export async function getDashboardData() {
     const event = toJsDate(c.eventDate);
     if (!event) return false;
     const today = startOfDay();
-    const limit = new Date(today);
-    limit.setDate(limit.getDate() + 7);
-    return startOfDay(event) >= today && startOfDay(event) <= limit;
+    const limitDate = new Date(today);
+    limitDate.setDate(limitDate.getDate() + 7);
+    return startOfDay(event) >= today && startOfDay(event) <= limitDate;
   });
 
-  const recentContracts = contracts
-    .filter((c) => c.status !== CONTRACT_STATUS.CANCELLED)
-    .slice(0, 5);
-
-  const monthlyReceived = buildMonthlySeries(recentPayments, 'received');
-  const monthlyExpected = buildMonthlyExpected(allInstallments);
+  const eventsThisMonth = nonCancelled
+    .filter((c) => isDateInMonth(c.eventDate, currentYear, currentMonth))
+    .sort((a, b) => {
+      const aDate = toJsDate(a.eventDate);
+      const bDate = toJsDate(b.eventDate);
+      if (!aDate && !bDate) return 0;
+      if (!aDate) return 1;
+      if (!bDate) return -1;
+      return aDate - bDate;
+    });
 
   return {
     metrics: {
-      totalContracted,
-      totalReceived,
       totalPending,
       totalOverdue,
       expectedThisMonth,
-      activeClients,
-      activeContracts,
-      overdueCount: overdueInstallments.length,
-      paidOffContracts,
+      closedThisMonthCount: closedThisMonthContracts.length,
     },
-    upcomingDue,
-    overdueInstallments: overdueInstallments.slice(0, 8),
-    recentPayments,
-    recentContracts,
+    details: {
+      pendingContracts,
+      overdueContracts,
+      expectedThisMonthInstallments,
+      closedThisMonthContracts,
+    },
+    dueInstallments,
+    eventsThisMonth,
     alerts: {
       dueToday,
       dueWeek,
@@ -123,66 +131,5 @@ export async function getDashboardData() {
       awaitingEntry,
       eventsSoon,
     },
-    charts: {
-      monthlyReceived,
-      monthlyExpected,
-    },
   };
-}
-
-function buildMonthlySeries(payments, type) {
-  const months = {};
-  const now = new Date();
-
-  for (let i = 5; i >= 0; i -= 1) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    months[key] = 0;
-  }
-
-  payments.forEach((payment) => {
-    const date = toJsDate(payment.paymentDate || payment.createdAt);
-    if (!date) return;
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    if (months[key] !== undefined) {
-      months[key] += payment.amount || 0;
-    }
-  });
-
-  return Object.entries(months).map(([key, value]) => {
-    const [year, month] = key.split('-');
-    const label = new Date(year, month - 1).toLocaleDateString('pt-BR', {
-      month: 'short',
-      year: '2-digit',
-    });
-    return { label, value };
-  });
-}
-
-function buildMonthlyExpected(allInstallments) {
-  const months = {};
-  const now = new Date();
-
-  for (let i = 5; i >= 0; i -= 1) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    months[key] = 0;
-  }
-
-  allInstallments.forEach(({ installment }) => {
-    const due = toJsDate(installment.dueDate);
-    const remaining = getInstallmentRemaining(installment);
-    if (!due || remaining <= 0) return;
-    const key = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}`;
-    if (months[key] !== undefined) months[key] += remaining;
-  });
-
-  return Object.entries(months).map(([key, value]) => {
-    const [year, month] = key.split('-');
-    const label = new Date(year, month - 1).toLocaleDateString('pt-BR', {
-      month: 'short',
-      year: '2-digit',
-    });
-    return { label, value };
-  });
 }

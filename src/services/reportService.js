@@ -1,10 +1,17 @@
 import { collection, getDocs, query, orderBy, limit, collectionGroup } from 'firebase/firestore';
 import { db } from '../firebase/config.js';
-import { CONTRACT_STATUS, SERVICE_TYPE_LABELS, PAYMENT_METHOD_LABELS } from '../utils/constants.js';
+import {
+  CLIENT_STATUS,
+  CONTRACT_STATUS,
+  SERVICE_TYPE_LABELS,
+  PAYMENT_METHOD_LABELS,
+} from '../utils/constants.js';
 import { formatCurrency } from '../utils/currency.js';
 import { formatDate } from '../utils/dates.js';
 import { getContractInstallments } from './contractService.js';
-import { toJsDate } from '../utils/installmentStatus.js';
+import { getRecentPayments } from './paymentService.js';
+import { isInstallmentOverdue, toJsDate } from '../utils/installmentStatus.js';
+import { buildMonthlyExpected, buildMonthlyReceived } from '../utils/monthlyCharts.js';
 
 export async function getReportData(filters = {}) {
   const contractsSnap = await getDocs(
@@ -102,6 +109,63 @@ export async function getReportData(filters = {}) {
     byService,
     contracts: nonCancelled,
     payments,
+  };
+}
+
+export async function getReportAnalytics() {
+  const [clientsSnap, contractsSnap] = await Promise.all([
+    getDocs(collection(db, 'clients')),
+    getDocs(query(collection(db, 'contracts'), orderBy('createdAt', 'desc'), limit(500))),
+  ]);
+
+  let recentPayments = [];
+  try {
+    recentPayments = await getRecentPayments(10);
+  } catch (error) {
+    console.warn('[Reports] Pagamentos recentes indisponíveis:', error);
+  }
+
+  const clients = clientsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const contracts = contractsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const nonCancelled = contracts.filter((c) => c.status !== CONTRACT_STATUS.CANCELLED);
+
+  const activeClients = clients.filter((c) => c.status === CLIENT_STATUS.ACTIVE).length;
+  const activeContracts = contracts.filter(
+    (c) => c.status !== CONTRACT_STATUS.CANCELLED && c.status !== CONTRACT_STATUS.PAID_OFF
+  ).length;
+  const paidOffContracts = contracts.filter((c) => c.status === CONTRACT_STATUS.PAID_OFF).length;
+  const totalContracted = nonCancelled.reduce((s, c) => s + (c.totalAmount || 0), 0);
+
+  const allInstallments = [];
+  for (const contract of nonCancelled.slice(0, 100)) {
+    const installments = await getContractInstallments(contract.id);
+    installments.forEach((inst) => {
+      allInstallments.push({ contract, installment: inst });
+    });
+  }
+
+  const overdueAll = allInstallments.filter(({ installment }) =>
+    isInstallmentOverdue(installment)
+  );
+  const overdueInstallments = overdueAll.slice(0, 10);
+
+  const recentContracts = nonCancelled.slice(0, 8);
+
+  return {
+    operational: {
+      totalContracted,
+      activeClients,
+      activeContracts,
+      paidOffContracts,
+      overdueCount: overdueAll.length,
+    },
+    charts: {
+      monthlyReceived: buildMonthlyReceived(recentPayments),
+      monthlyExpected: buildMonthlyExpected(allInstallments),
+    },
+    recentPayments,
+    recentContracts,
+    overdueInstallments,
   };
 }
 

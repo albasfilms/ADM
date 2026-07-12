@@ -25,12 +25,15 @@ const CONTRACTS = 'contracts';
 
 export async function getPaymentsForInstallment(contractId, installmentId) {
   const snapshot = await getDocs(
-    query(
-      collection(db, CONTRACTS, contractId, 'installments', installmentId, 'payments'),
-      orderBy('createdAt', 'asc')
-    )
+    collection(db, CONTRACTS, contractId, 'installments', installmentId, 'payments')
   );
-  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return snapshot.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => {
+      const aTime = a.createdAt?.toMillis?.() || a.paymentDate?.toMillis?.() || 0;
+      const bTime = b.createdAt?.toMillis?.() || b.paymentDate?.toMillis?.() || 0;
+      return aTime - bTime;
+    });
 }
 
 export async function updateContractTotals(contractId) {

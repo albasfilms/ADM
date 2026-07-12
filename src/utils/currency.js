@@ -40,14 +40,69 @@ export function parseCurrencyInput(value) {
   return reaisToCents(value);
 }
 
+const MAX_CURRENCY_CENTS = 99999999999;
+
 export function bindCurrencyInput(input) {
-  input.addEventListener('input', () => {
-    const cents = parseCurrencyInput(input.value);
+  if (input.dataset.currencyBound) return;
+  input.dataset.currencyBound = 'true';
+  input.setAttribute('inputmode', 'numeric');
+  input.setAttribute('autocomplete', 'off');
+
+  let cents = parseCurrencyInput(input.value) || 0;
+
+  const applyCents = (nextCents) => {
+    cents = Math.max(0, Math.min(nextCents, MAX_CURRENCY_CENTS));
     input.value = cents ? formatCurrencyInput(cents) : '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  if (input.value) {
+    applyCents(cents);
+  }
+
+  input.addEventListener('keydown', (event) => {
+    if (
+      event.key === 'Tab' ||
+      event.key === 'Enter' ||
+      event.key.startsWith('Arrow') ||
+      event.key === 'Home' ||
+      event.key === 'End' ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
+    if (event.key === 'Backspace') {
+      event.preventDefault();
+      applyCents(Math.floor(cents / 10));
+      return;
+    }
+
+    if (event.key === 'Delete') {
+      event.preventDefault();
+      applyCents(0);
+      return;
+    }
+
+    if (!/^\d$/.test(event.key)) {
+      event.preventDefault();
+      return;
+    }
+
+    event.preventDefault();
+    applyCents(cents * 10 + parseInt(event.key, 10));
+  });
+
+  input.addEventListener('paste', (event) => {
+    event.preventDefault();
+    const text = event.clipboardData.getData('text') || '';
+    applyCents(parseCurrencyInput(text));
   });
 
   input.addEventListener('blur', () => {
-    const cents = parseCurrencyInput(input.value);
+    cents = parseCurrencyInput(input.value) || 0;
     input.value = cents ? formatCurrencyInput(cents) : '';
   });
 }

@@ -84,6 +84,18 @@ export const PAYMENT_METHODS = {
   OTHER: 'other',
 };
 
+export const PAYMENT_PLAN_TYPES = {
+  ENTRY_BEFORE_WEDDING: 'entry_before_wedding',
+  CREDIT_CARD: 'credit_card',
+  CASH: 'cash',
+};
+
+export const PAYMENT_PLAN_LABELS = {
+  [PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING]: '30% entrada + parcelas antes do casamento',
+  [PAYMENT_PLAN_TYPES.CREDIT_CARD]: 'Parcelamento no cartão (até 10x)',
+  [PAYMENT_PLAN_TYPES.CASH]: 'À vista',
+};
+
 export const PAYMENT_METHOD_LABELS = {
   [PAYMENT_METHODS.PIX]: 'Pix',
   [PAYMENT_METHODS.CASH]: 'Dinheiro',

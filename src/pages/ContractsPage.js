@@ -4,6 +4,7 @@ import {
   getActiveClients,
   cancelContract,
   finalizeContract,
+  deleteContract,
 } from '../services/contractService.js';
 import { openContractFormModal } from './contractForm.js';
 import { createEmptyState } from '../components/EmptyState.js';
@@ -23,13 +24,16 @@ import {
   CONTRACT_STATUS,
   CONTRACT_STATUS_LABELS,
   SERVICE_TYPE_LABELS,
+  INSTALLMENT_STATUS,
   INSTALLMENT_STATUS_LABELS,
+  PAYMENT_METHOD_LABELS,
 } from '../utils/constants.js';
 import { formatCurrency } from '../utils/currency.js';
 import { formatDate, formatDateTime } from '../utils/dates.js';
 import { escapeHtml, renderIcons, showToast } from '../utils/dom.js';
-import { isAdmin } from '../utils/permissions.js';
+import { isAdmin, canDeleteContracts } from '../utils/permissions.js';
 import { getCurrentUser } from '../appState.js';
+import { formatDaysUntilEvent, getEventTimestamp } from '../utils/eventCountdown.js';
 
 let listState = {
   search: '',
@@ -53,6 +57,8 @@ function formatEventLocation(contract) {
 function buildContractCardHTML(contract) {
   const serviceLabel = SERVICE_TYPE_LABELS[contract.serviceType] || 'Serviço';
   const location = formatEventLocation(contract);
+  const eventTs = getEventTimestamp(contract);
+  const countdown = eventTs ? formatDaysUntilEvent(eventTs) : null;
   const percent =
     contract.totalAmount > 0
       ? Math.min(100, Math.round((contract.receivedAmount / contract.totalAmount) * 100))
@@ -68,6 +74,16 @@ function buildContractCardHTML(contract) {
         <div class="contract-card__status" data-status="${contract.id}"></div>
       </div>
       <span class="contract-card__service">${escapeHtml(serviceLabel)}</span>
+      ${
+        countdown
+          ? `
+      <div class="contract-card__countdown contract-card__countdown--${countdown.variant}" data-event-ts="${eventTs}">
+        <i data-lucide="timer" aria-hidden="true"></i>
+        <span class="contract-card__countdown-value">${countdown.text}</span>
+      </div>
+      `
+          : ''
+      }
       <ul class="contract-card__meta">
         <li>
           <i data-lucide="calendar" aria-hidden="true"></i>
@@ -83,6 +99,16 @@ function buildContractCardHTML(contract) {
           <span>${escapeHtml(location)}</span>
         </li>
       </ul>
+      ${
+        contract.contractLink
+          ? `
+      <a href="${escapeHtml(contract.contractLink)}" class="contract-card__signed-link link" target="_blank" rel="noopener noreferrer">
+        <i data-lucide="file-signature" aria-hidden="true"></i>
+        Acessar contrato assinado
+      </a>
+      `
+          : ''
+      }
       <div class="contract-card__footer">
         <div class="contract-card__amount">
           <span class="contract-card__label">Total</span>
@@ -121,14 +147,46 @@ function createContractsGridSkeleton(count = 6) {
 function bindContractCards(container) {
   container.querySelectorAll('.contract-card[data-contract-id]').forEach((card) => {
     const open = () => navigateTo(`/contratos/${card.dataset.contractId}`);
-    card.addEventListener('click', open);
+    card.addEventListener('click', (event) => {
+      if (event.target.closest('.contract-card__signed-link')) return;
+      open();
+    });
     card.addEventListener('keydown', (event) => {
+      if (event.target.closest('.contract-card__signed-link')) return;
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         open();
       }
     });
   });
+}
+
+function startContractCardCountdowns(container) {
+  if (container._contractTimerId) {
+    clearInterval(container._contractTimerId);
+  }
+
+  const tick = () => {
+    container.querySelectorAll('[data-event-ts]').forEach((el) => {
+      const ts = Number(el.dataset.eventTs);
+      if (!ts) return;
+
+      const { text, variant } = formatDaysUntilEvent(ts);
+      const valueEl = el.querySelector('.contract-card__countdown-value');
+      if (valueEl) valueEl.textContent = text;
+
+      el.classList.remove(
+        'contract-card__countdown--upcoming',
+        'contract-card__countdown--soon',
+        'contract-card__countdown--done',
+        'contract-card__countdown--none'
+      );
+      el.classList.add(`contract-card__countdown--${variant}`);
+    });
+  };
+
+  tick();
+  container._contractTimerId = setInterval(tick, 60000);
 }
 
 function navigateTo(path) {
@@ -248,6 +306,13 @@ async function renderContractDetail(container, contractId) {
       ${
         contract.status !== CONTRACT_STATUS.CANCELLED && isAdmin(user)
           ? `<button type="button" class="btn btn--ghost" id="cancel-btn">Cancelar</button>`
+          : ''
+      }
+      ${
+        canDeleteContracts(user)
+          ? `<button type="button" class="btn btn--danger" id="delete-contract-btn">
+        <i data-lucide="trash-2" aria-hidden="true"></i> Excluir
+      </button>`
           : ''
       }
     `;
@@ -483,6 +548,19 @@ async function renderContractDetail(container, contractId) {
         },
       });
     });
+
+    container.querySelector('#delete-contract-btn')?.addEventListener('click', () => {
+      showConfirmModal({
+        title: 'Excluir contrato',
+        message: `Deseja excluir permanentemente o contrato <strong>${escapeHtml(contract.title)}</strong>? Esta ação não pode ser desfeita e removerá parcelas e pagamentos vinculados.`,
+        confirmLabel: 'Excluir contrato',
+        onConfirm: async () => {
+          await deleteContract(contractId, user);
+          showToast('Contrato excluído.', 'success');
+          navigateTo('/contratos');
+        },
+      });
+    });
   } catch (error) {
     console.error('[Contracts] Erro:', error);
     content.innerHTML = `<p class="text-error">Erro ao carregar contrato.</p>`;
@@ -545,6 +623,7 @@ async function loadContractsList(listContainer, paginationContainer) {
 
     renderIcons(grid);
     bindContractCards(grid);
+    startContractCardCountdowns(listContainer);
 
     paginationContainer.innerHTML = '';
     paginationContainer.appendChild(
