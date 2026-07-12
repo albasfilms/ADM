@@ -392,6 +392,10 @@ function countYearStats(year, eventsByDate, budgetEntries, blockedDays, maxEvent
   );
 }
 
+function getDefaultCalendarViewMode() {
+  return window.matchMedia('(max-width: 768px)').matches ? 'month' : 'year';
+}
+
 function setViewToggleActive(container, viewMode) {
   container.querySelectorAll('[data-calendar-view]').forEach((btn) => {
     btn.classList.toggle('is-active', btn.dataset.calendarView === viewMode);
@@ -655,7 +659,7 @@ export async function renderCalendarPage(container) {
           <div class="calendar-header-actions">
             <div class="calendar-view-toggle">
               <button type="button" class="btn btn--secondary btn--sm dashboard-filter-btn" data-calendar-view="month">Mensal</button>
-              <button type="button" class="btn btn--secondary btn--sm dashboard-filter-btn is-active" data-calendar-view="year">Anual</button>
+              <button type="button" class="btn btn--secondary btn--sm dashboard-filter-btn" data-calendar-view="year">Anual</button>
             </div>
             <button type="button" class="btn btn--secondary btn--sm" id="calendar-today">Hoje</button>
           </div>
@@ -690,10 +694,11 @@ export async function renderCalendarPage(container) {
 
   try {
     const data = await getCalendarData();
+    const defaultViewMode = getDefaultCalendarViewMode();
     const state = {
       year: now.getFullYear(),
       month: now.getMonth(),
-      viewMode: 'year',
+      viewMode: defaultViewMode,
       selectedDateKey: toDateKey(now),
       eventsByDate: groupContractsByDate(data.contracts),
       blockedDays: data.blockedDays,
