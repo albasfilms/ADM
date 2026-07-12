@@ -46,3 +46,24 @@ export function escapeHtml(text) {
   div.textContent = text;
   return div.innerHTML;
 }
+
+export function getFirestoreErrorMessage(error, fallback = 'Erro ao salvar. Tente novamente.') {
+  if (!error) return fallback;
+
+  const code = error.code || '';
+  const message = String(error.message || '').toLowerCase();
+
+  if (code === 'permission-denied' || message.includes('permission')) {
+    return 'Sem permissão no Firestore. Publique as regras com: firebase deploy --only firestore:rules';
+  }
+
+  if (code === 'failed-precondition') {
+    return 'Índice do Firestore pendente. Aguarde alguns minutos e tente novamente.';
+  }
+
+  if (code === 'unavailable') {
+    return 'Firestore indisponível no momento. Verifique sua conexão.';
+  }
+
+  return error.message || fallback;
+}

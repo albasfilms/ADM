@@ -9,6 +9,9 @@ const NAV_ITEMS = [
   { path: '/clientes', label: 'Clientes', icon: 'users' },
   { path: '/contratos', label: 'Contratos', icon: 'file-text' },
   { path: '/calendario', label: 'Calendário', icon: 'calendar-days' },
+  { path: '/orcamentos', label: 'Orçamentos', icon: 'file-plus' },
+  { path: '/notas', label: 'Notas', icon: 'sticky-note' },
+  { path: '/links', label: 'Links', icon: 'link' },
   { path: '/relatorios', label: 'Relatórios', icon: 'bar-chart-3' },
 ];
 

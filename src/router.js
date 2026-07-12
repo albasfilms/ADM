@@ -10,6 +10,9 @@ import { renderClientsPage } from './pages/ClientsPage.js';
 import { renderContractsPage } from './pages/ContractsPage.js';
 import { renderReportsPage } from './pages/ReportsPage.js';
 import { renderCalendarPage } from './pages/CalendarPage.js';
+import { renderNotesPage } from './pages/NotesPage.js';
+import { renderLinksPage } from './pages/LinksPage.js';
+import { renderBudgetsPage } from './pages/BudgetsPage.js';
 
 const PUBLIC_ROUTES = ['/login'];
 
@@ -39,6 +42,21 @@ const ROUTES = {
     requiresAuth: true,
     render: renderReportsPage,
   },
+  '/notas': {
+    title: 'Notas',
+    requiresAuth: true,
+    render: renderNotesPage,
+  },
+  '/links': {
+    title: 'Links',
+    requiresAuth: true,
+    render: renderLinksPage,
+  },
+  '/orcamentos': {
+    title: 'Orçamentos',
+    requiresAuth: true,
+    render: renderBudgetsPage,
+  },
   '/login': {
     title: 'Login',
     requiresAuth: false,
@@ -59,6 +77,9 @@ function resolveRoute(path) {
   if (path.startsWith('/contratos')) return ROUTES['/contratos'];
   if (path.startsWith('/calendario')) return ROUTES['/calendario'];
   if (path.startsWith('/relatorios')) return ROUTES['/relatorios'];
+  if (path.startsWith('/notas')) return ROUTES['/notas'];
+  if (path.startsWith('/links')) return ROUTES['/links'];
+  if (path.startsWith('/orcamentos')) return ROUTES['/orcamentos'];
 
   return ROUTES['/'];
 }

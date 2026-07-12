@@ -139,7 +139,7 @@
 }
 
 .login-card__logo-img {
-  width: 120px;
+  width: min(220px, 80vw);
   height: auto;
   margin: 0 auto var(--space-4);
   object-fit: contain;

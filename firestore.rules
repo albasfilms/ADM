@@ -58,6 +58,14 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
+    match /notes/{noteId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /links/{linkId} {
+      allow read, write: if isAuthenticated();
+    }
+
     // Pagamentos — consulta em qualquer contrato
     match /{path=**}/payments/{paymentId} {
       allow read, write: if isAuthenticated();

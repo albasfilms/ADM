@@ -119,7 +119,7 @@
   }
 
   .login-card__logo-img {
-    width: 96px;
+    width: min(180px, 72vw);
   }
 
   .login-card__title {
