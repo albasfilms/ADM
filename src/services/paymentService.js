@@ -20,8 +20,17 @@ import {
 } from '../utils/installmentStatus.js';
 import { createAuditLog } from './auditService.js';
 import { getContractById, getContractInstallments } from './contractService.js';
+import { invalidateCacheByPrefix } from '../utils/dataCache.js';
 
 const CONTRACTS = 'contracts';
+
+function invalidateFinancialCache(contractId) {
+  invalidateCacheByPrefix('installments:');
+  invalidateCacheByPrefix('contracts:');
+  invalidateCacheByPrefix('dashboard:');
+  invalidateCacheByPrefix('calendar:');
+  invalidateCache(`installments:${contractId}`);
+}
 
 export async function getPaymentsForInstallment(contractId, installmentId) {
   const snapshot = await getDocs(
@@ -79,6 +88,7 @@ export async function updateContractTotals(contractId) {
   });
 
   await batch.commit();
+  invalidateFinancialCache(contractId);
 }
 
 export async function registerPayment({

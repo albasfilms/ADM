@@ -8,12 +8,15 @@ import {
   orderBy,
   limit,
   serverTimestamp,
+  deleteField,
 } from 'firebase/firestore';
 import { db } from '../firebase/config.js';
-import { CONTRACT_STATUS } from '../utils/constants.js';
-import { toJsDate } from '../utils/installmentStatus.js';
+import { CONTRACT_STATUS, INSTALLMENT_STATUS } from '../utils/constants.js';
+import { toJsDate, getInstallmentRemaining } from '../utils/installmentStatus.js';
 import { getCurrentUser } from '../appState.js';
 import { onlyDigits } from '../utils/validators.js';
+import { getContractInstallments } from './contractService.js';
+import { getCached, invalidateCache, invalidateCacheByPrefix } from '../utils/dataCache.js';
 
 const SETTINGS_REF = doc(db, 'settings', 'calendar');
 
@@ -75,7 +78,20 @@ function createBudgetEntryId() {
   return `budget-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-async function saveCalendarSettings(transaction, settings) {
+function saveCalendarSettings(transaction, settings) {
+  // O merge do Firestore combina mapas sem remover chaves ausentes.
+  // Apagamos os mapas antes de regravar para que desbloqueios e exclusões persistam.
+  transaction.set(
+    SETTINGS_REF,
+    {
+      blockedDays: deleteField(),
+      budgetEntries: deleteField(),
+      blockedDates: deleteField(),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+
   transaction.set(
     SETTINGS_REF,
     {
@@ -88,6 +104,12 @@ async function saveCalendarSettings(transaction, settings) {
   );
 }
 
+function invalidateCalendarCache() {
+  invalidateCache('calendar:data');
+  invalidateCache('calendar:settings');
+  invalidateCache('calendar:budgets');
+}
+
 function getSettingsPayload(data = {}) {
   return {
     blockedDays: normalizeBlockedDays(data),
@@ -97,7 +119,7 @@ function getSettingsPayload(data = {}) {
 }
 
 export async function setBlockedDate(dateKey, reason) {
-  return runTransaction(db, async (transaction) => {
+  const blockedDays = await runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(SETTINGS_REF);
     const data = snapshot.exists() ? snapshot.data() : {};
     const settings = getSettingsPayload(data);
@@ -113,10 +135,13 @@ export async function setBlockedDate(dateKey, reason) {
 
     return blockedDays;
   });
+
+  invalidateCalendarCache();
+  return blockedDays;
 }
 
 export async function removeBlockedDate(dateKey) {
-  return runTransaction(db, async (transaction) => {
+  const blockedDays = await runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(SETTINGS_REF);
     const data = snapshot.exists() ? snapshot.data() : {};
     const settings = getSettingsPayload(data);
@@ -130,6 +155,9 @@ export async function removeBlockedDate(dateKey) {
 
     return blockedDays;
   });
+
+  invalidateCalendarCache();
+  return blockedDays;
 }
 
 export async function addBudgetEntry(dateKey, { clientName, phone, notes, amount = 0 }) {
@@ -138,7 +166,7 @@ export async function addBudgetEntry(dateKey, { clientName, phone, notes, amount
     throw new Error('O nome do cliente é obrigatório.');
   }
 
-  return runTransaction(db, async (transaction) => {
+  const result = await runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(SETTINGS_REF);
     const data = snapshot.exists() ? snapshot.data() : {};
     const settings = getSettingsPayload(data);
@@ -162,10 +190,13 @@ export async function addBudgetEntry(dateKey, { clientName, phone, notes, amount
 
     return { budgetEntries, entry };
   });
+
+  invalidateCalendarCache();
+  return result;
 }
 
 export async function removeBudgetEntry(dateKey, entryId) {
-  return runTransaction(db, async (transaction) => {
+  const budgetEntries = await runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(SETTINGS_REF);
     const data = snapshot.exists() ? snapshot.data() : {};
     const settings = getSettingsPayload(data);
@@ -186,17 +217,21 @@ export async function removeBudgetEntry(dateKey, entryId) {
 
     return budgetEntries;
   });
+
+  invalidateCalendarCache();
+  return budgetEntries;
 }
 
 export async function getCalendarSettings() {
-  const snapshot = await getDoc(SETTINGS_REF);
-  if (!snapshot.exists()) {
-    return { blockedDays: {}, budgetEntries: {}, maxEventsPerDay: 1 };
-  }
+  return getCached('calendar:settings', async () => {
+    const snapshot = await getDoc(SETTINGS_REF);
+    if (!snapshot.exists()) {
+      return { blockedDays: {}, budgetEntries: {}, maxEventsPerDay: 1 };
+    }
 
-  const data = snapshot.data();
-  const settings = getSettingsPayload(data);
-  return settings;
+    const data = snapshot.data();
+    return getSettingsPayload(data);
+  });
 }
 
 export function getBlockedDateKeys(blockedDays = {}) {
@@ -219,25 +254,65 @@ export function flattenBudgetEntries(budgetEntries = {}) {
 }
 
 export async function getAllBudgetEntries() {
-  const settings = await getCalendarSettings();
-  return flattenBudgetEntries(settings.budgetEntries);
+  return getCached('calendar:budgets', async () => {
+    const settings = await getCalendarSettings();
+    return flattenBudgetEntries(settings.budgetEntries);
+  });
+}
+
+async function getPendingPayments(contracts = []) {
+  const activeContracts = contracts.filter((contract) => contract.status !== CONTRACT_STATUS.CANCELLED);
+  const groups = await Promise.all(
+    activeContracts.map(async (contract) => {
+      const installments = await getContractInstallments(contract.id);
+      return installments
+        .filter((installment) => installment.status !== INSTALLMENT_STATUS.CANCELLED)
+        .filter((installment) => getInstallmentRemaining(installment) > 0)
+        .map((installment) => ({ contract, installment }));
+    })
+  );
+
+  return groups.flat();
+}
+
+export function groupPendingPaymentsByDate(pendingPayments = []) {
+  const map = new Map();
+
+  pendingPayments.forEach((item) => {
+    const dateKey = toDateKey(item.installment.dueDate);
+    if (!dateKey) return;
+    if (!map.has(dateKey)) map.set(dateKey, []);
+    map.get(dateKey).push(item);
+  });
+
+  map.forEach((items) => {
+    items.sort((a, b) => {
+      const numberCompare = (a.installment.number ?? 0) - (b.installment.number ?? 0);
+      if (numberCompare !== 0) return numberCompare;
+      return String(a.contract.clientName || '').localeCompare(String(b.contract.clientName || ''), 'pt-BR');
+    });
+  });
+
+  return map;
 }
 
 export async function getCalendarData() {
-  const snapshot = await getDocs(
-    query(collection(db, 'contracts'), orderBy('createdAt', 'desc'), limit(500))
-  );
+  return getCached('calendar:data', async () => {
+    const snapshot = await getDocs(
+      query(collection(db, 'contracts'), orderBy('createdAt', 'desc'), limit(500))
+    );
 
-  const contracts = snapshot.docs
-    .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-    .filter((contract) => contract.eventDate && contract.status !== CONTRACT_STATUS.CANCELLED);
+    const allContracts = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+    const contracts = allContracts.filter((contract) => contract.eventDate && contract.status !== CONTRACT_STATUS.CANCELLED);
+    const pendingPayments = await getPendingPayments(allContracts);
+    const settings = await getCalendarSettings();
 
-  const settings = await getCalendarSettings();
-
-  return {
-    contracts,
-    blockedDays: settings.blockedDays,
-    budgetEntries: settings.budgetEntries,
-    maxEventsPerDay: settings.maxEventsPerDay,
-  };
+    return {
+      contracts,
+      blockedDays: settings.blockedDays,
+      budgetEntries: settings.budgetEntries,
+      maxEventsPerDay: settings.maxEventsPerDay,
+      paymentsByDate: groupPendingPaymentsByDate(pendingPayments),
+    };
+  });
 }

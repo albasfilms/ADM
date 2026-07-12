@@ -1,6 +1,7 @@
 import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config.js';
 import { getCurrentUser } from '../appState.js';
+import { getCached, invalidateCache } from '../utils/dataCache.js';
 
 const SETTINGS_REF = doc(db, 'settings', 'notes');
 
@@ -53,8 +54,10 @@ async function readItems() {
 }
 
 export async function getNotes({ limitCount = 200 } = {}) {
-  const items = await readItems();
-  return sortNotes(items, limitCount);
+  return getCached('notes:list', async () => {
+    const items = await readItems();
+    return sortNotes(items, limitCount);
+  });
 }
 
 export async function getNote(noteId) {
@@ -72,10 +75,10 @@ export async function createNote(data) {
   const author = getAuthor();
   const now = Date.now();
 
-  return runTransaction(db, async (transaction) => {
+  const entry = await runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(SETTINGS_REF);
     const items = normalizeItems(snapshot.exists() ? snapshot.data() : {});
-    const entry = {
+    const newEntry = {
       id: createEntryId('note'),
       ...normalized,
       createdBy: author,
@@ -87,14 +90,17 @@ export async function createNote(data) {
     transaction.set(
       SETTINGS_REF,
       {
-        items: [...items, entry],
+        items: [...items, newEntry],
         updatedAt: serverTimestamp(),
       },
       { merge: true }
     );
 
-    return entry;
+    return newEntry;
   });
+
+  invalidateCache('notes:list');
+  return entry;
 }
 
 export async function updateNote(noteId, data) {
@@ -106,7 +112,7 @@ export async function updateNote(noteId, data) {
   const author = getAuthor();
   const now = Date.now();
 
-  return runTransaction(db, async (transaction) => {
+  const updated = await runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(SETTINGS_REF);
     const items = normalizeItems(snapshot.exists() ? snapshot.data() : {});
     const index = items.findIndex((item) => item.id === noteId);
@@ -115,14 +121,14 @@ export async function updateNote(noteId, data) {
       throw new Error('Nota não encontrada.');
     }
 
-    const updated = {
+    const next = {
       ...items[index],
       ...normalized,
       updatedBy: author,
       updatedAt: now,
     };
 
-    items[index] = updated;
+    items[index] = next;
 
     transaction.set(
       SETTINGS_REF,
@@ -133,12 +139,15 @@ export async function updateNote(noteId, data) {
       { merge: true }
     );
 
-    return updated;
+    return next;
   });
+
+  invalidateCache('notes:list');
+  return updated;
 }
 
 export async function deleteNote(noteId) {
-  return runTransaction(db, async (transaction) => {
+  await runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(SETTINGS_REF);
     const items = normalizeItems(snapshot.exists() ? snapshot.data() : {});
     const filtered = items.filter((item) => item.id !== noteId);
@@ -152,4 +161,6 @@ export async function deleteNote(noteId) {
       { merge: true }
     );
   });
+
+  invalidateCache('notes:list');
 }

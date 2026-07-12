@@ -1,6 +1,7 @@
 import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config.js';
 import { getCurrentUser } from '../appState.js';
+import { getCached, invalidateCache } from '../utils/dataCache.js';
 
 const SETTINGS_REF = doc(db, 'settings', 'links');
 
@@ -59,8 +60,10 @@ async function readItems() {
 }
 
 export async function getLinks({ limitCount = 200 } = {}) {
-  const items = await readItems();
-  return sortLinks(items, limitCount);
+  return getCached('links:list', async () => {
+    const items = await readItems();
+    return sortLinks(items, limitCount);
+  });
 }
 
 export async function getLink(linkId) {
@@ -83,10 +86,10 @@ export async function createLink(data) {
   const author = getAuthor();
   const now = Date.now();
 
-  return runTransaction(db, async (transaction) => {
+  const entry = await runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(SETTINGS_REF);
     const items = normalizeItems(snapshot.exists() ? snapshot.data() : {});
-    const entry = {
+    const newEntry = {
       id: createEntryId('link'),
       ...normalized,
       createdBy: author,
@@ -98,14 +101,17 @@ export async function createLink(data) {
     transaction.set(
       SETTINGS_REF,
       {
-        items: [...items, entry],
+        items: [...items, newEntry],
         updatedAt: serverTimestamp(),
       },
       { merge: true }
     );
 
-    return entry;
+    return newEntry;
   });
+
+  invalidateCache('links:list');
+  return entry;
 }
 
 export async function updateLink(linkId, data) {
@@ -122,7 +128,7 @@ export async function updateLink(linkId, data) {
   const author = getAuthor();
   const now = Date.now();
 
-  return runTransaction(db, async (transaction) => {
+  const updated = await runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(SETTINGS_REF);
     const items = normalizeItems(snapshot.exists() ? snapshot.data() : {});
     const index = items.findIndex((item) => item.id === linkId);
@@ -131,14 +137,14 @@ export async function updateLink(linkId, data) {
       throw new Error('Link não encontrado.');
     }
 
-    const updated = {
+    const next = {
       ...items[index],
       ...normalized,
       updatedBy: author,
       updatedAt: now,
     };
 
-    items[index] = updated;
+    items[index] = next;
 
     transaction.set(
       SETTINGS_REF,
@@ -149,12 +155,15 @@ export async function updateLink(linkId, data) {
       { merge: true }
     );
 
-    return updated;
+    return next;
   });
+
+  invalidateCache('links:list');
+  return updated;
 }
 
 export async function deleteLink(linkId) {
-  return runTransaction(db, async (transaction) => {
+  await runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(SETTINGS_REF);
     const items = normalizeItems(snapshot.exists() ? snapshot.data() : {});
     const filtered = items.filter((item) => item.id !== linkId);
@@ -168,6 +177,8 @@ export async function deleteLink(linkId) {
       { merge: true }
     );
   });
+
+  invalidateCache('links:list');
 }
 
 export { normalizeUrl };

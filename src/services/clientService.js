@@ -15,8 +15,14 @@ import {
 import { db } from '../firebase/config.js';
 import { CLIENT_STATUS, PAGE_SIZE } from '../utils/constants.js';
 import { onlyDigits } from '../utils/validators.js';
+import { getCached, invalidateCacheByPrefix } from '../utils/dataCache.js';
 
 const COLLECTION = 'clients';
+
+function invalidateClientsCache() {
+  invalidateCacheByPrefix('clients:');
+  invalidateCacheByPrefix('contracts:active-clients');
+}
 
 function normalizeClientData(data) {
   return {
@@ -71,42 +77,46 @@ export async function getClients({
   pageSize = PAGE_SIZE,
   cursor = null,
 } = {}) {
-  const constraints = buildQueryConstraints({ status, sortBy, sortDir });
+  const cacheKey = `clients:list:${status}:${sortBy}:${sortDir}:${search}:${pageSize}:${cursor || ''}`;
 
-  if (search) {
-    constraints.push(limit(300));
-  } else {
-    constraints.push(limit(pageSize));
-    if (cursor) {
-      constraints.push(startAfter(cursor));
+  return getCached(cacheKey, async () => {
+    const constraints = buildQueryConstraints({ status, sortBy, sortDir });
+
+    if (search) {
+      constraints.push(limit(300));
+    } else {
+      constraints.push(limit(pageSize));
+      if (cursor) {
+        constraints.push(startAfter(cursor));
+      }
     }
-  }
 
-  const snapshot = await getDocs(query(collection(db, COLLECTION), ...constraints));
-  let clients = snapshot.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...docSnap.data(),
-  }));
+    const snapshot = await getDocs(query(collection(db, COLLECTION), ...constraints));
+    let clients = snapshot.docs.map((docSnap) => ({
+      id: docSnap.id,
+      ...docSnap.data(),
+    }));
 
-  if (search) {
-    clients = clients.filter((client) => matchesSearch(client, search));
-    const start = cursor ? Number(cursor) : 0;
-    const paginated = clients.slice(start, start + pageSize);
+    if (search) {
+      clients = clients.filter((client) => matchesSearch(client, search));
+      const start = cursor ? Number(cursor) : 0;
+      const paginated = clients.slice(start, start + pageSize);
+
+      return {
+        clients: paginated,
+        lastCursor: start + pageSize < clients.length ? String(start + pageSize) : null,
+        totalFiltered: clients.length,
+        hasMore: start + pageSize < clients.length,
+      };
+    }
 
     return {
-      clients: paginated,
-      lastCursor: start + pageSize < clients.length ? String(start + pageSize) : null,
-      totalFiltered: clients.length,
-      hasMore: start + pageSize < clients.length,
+      clients,
+      lastCursor: snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null,
+      totalFiltered: null,
+      hasMore: snapshot.docs.length === pageSize,
     };
-  }
-
-  return {
-    clients,
-    lastCursor: snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null,
-    totalFiltered: null,
-    hasMore: snapshot.docs.length === pageSize,
-  };
+  }, search ? 15_000 : 60_000);
 }
 
 export async function getClientById(id) {
@@ -123,6 +133,7 @@ export async function createClient(data) {
   };
 
   const docRef = await addDoc(collection(db, COLLECTION), payload);
+  invalidateClientsCache();
   return docRef.id;
 }
 
@@ -133,6 +144,7 @@ export async function updateClient(id, data) {
   };
 
   await updateDoc(doc(db, COLLECTION, id), payload);
+  invalidateClientsCache();
 }
 
 export async function archiveClient(id) {
@@ -140,6 +152,7 @@ export async function archiveClient(id) {
     status: CLIENT_STATUS.INACTIVE,
     updatedAt: serverTimestamp(),
   });
+  invalidateClientsCache();
 }
 
 export async function getClientContracts(clientId) {

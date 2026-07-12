@@ -10,6 +10,7 @@ import {
   startOfDay,
 } from '../utils/installmentStatus.js';
 import { getContractInstallments } from './contractService.js';
+import { getCached } from '../utils/dataCache.js';
 
 function getMonthRange(year, month) {
   return {
@@ -26,26 +27,27 @@ function isDateInMonth(value, year, month) {
 }
 
 export async function getDashboardData() {
-  const contractsSnap = await getDocs(
-    query(collection(db, 'contracts'), orderBy('createdAt', 'desc'), limit(500))
-  );
+  return getCached('dashboard:data', async () => {
+    const contractsSnap = await getDocs(
+      query(collection(db, 'contracts'), orderBy('createdAt', 'desc'), limit(500))
+    );
 
-  const contracts = contractsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  const nonCancelled = contracts.filter((c) => c.status !== CONTRACT_STATUS.CANCELLED);
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
+    const contracts = contractsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const nonCancelled = contracts.filter((c) => c.status !== CONTRACT_STATUS.CANCELLED);
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
 
-  const totalPending = nonCancelled.reduce((s, c) => s + (c.pendingAmount || 0), 0);
-  const totalOverdue = nonCancelled.reduce((s, c) => s + (c.overdueAmount || 0), 0);
+    const totalPending = nonCancelled.reduce((s, c) => s + (c.pendingAmount || 0), 0);
+    const totalOverdue = nonCancelled.reduce((s, c) => s + (c.overdueAmount || 0), 0);
 
-  const allInstallments = [];
-  for (const contract of nonCancelled.slice(0, 100)) {
-    const installments = await getContractInstallments(contract.id);
-    installments.forEach((inst) => {
-      allInstallments.push({ contract, installment: inst });
-    });
-  }
+    const installmentGroups = await Promise.all(
+      nonCancelled.slice(0, 100).map(async (contract) => {
+        const installments = await getContractInstallments(contract.id);
+        return installments.map((installment) => ({ contract, installment }));
+      })
+    );
+    const allInstallments = installmentGroups.flat();
 
   const { start: monthStart, end: monthEnd } = getMonthRange(currentYear, currentMonth);
 
@@ -132,4 +134,5 @@ export async function getDashboardData() {
       eventsSoon,
     },
   };
+  });
 }

@@ -24,9 +24,16 @@ import {
   calculatePaymentPlan,
   validatePaymentPlan,
   getInstallmentSummary,
+  calculateEntryAmount,
 } from '../utils/installments.js';
 import { escapeHtml, renderIcons, showToast } from '../utils/dom.js';
 import { toDateInputValue } from '../utils/dates.js';
+import {
+  DEFAULT_CITY,
+  DEFAULT_STATE,
+  getCitiesForState,
+  getDefaultCityForState,
+} from '../utils/brazilLocations.js';
 import {
   addMonths,
   getFirstDueBeforeEvent,
@@ -34,6 +41,119 @@ import {
   parseFormDate,
   toDateInputString,
 } from '../utils/paymentPlanPresets.js';
+import {
+  CATALOG_SERVICE_ORDER,
+  getServicePrice,
+  hasCatalogPrice,
+} from '../utils/servicePricing.js';
+
+function getContractDefaults(contract) {
+  if (contract) {
+    return {
+      closingDate: toDateInputValue(contract.closingDate),
+      eventTime: contract.eventTime || '16:00',
+      state: contract.state || '',
+      city: contract.city || '',
+    };
+  }
+
+  return {
+    closingDate: toDateInputString(new Date()),
+    eventTime: '16:00',
+    state: DEFAULT_STATE,
+    city: DEFAULT_CITY,
+  };
+}
+
+function renderCityOptions(state, selectedCity = '') {
+  const cities = getCitiesForState(state);
+  const options = cities
+    .map((city) => `<option value="${escapeHtml(city)}" ${selectedCity === city ? 'selected' : ''}>${escapeHtml(city)}</option>`)
+    .join('');
+
+  if (selectedCity && !cities.includes(selectedCity)) {
+    return `<option value="${escapeHtml(selectedCity)}" selected>${escapeHtml(selectedCity)}</option>${options}`;
+  }
+
+  if (!selectedCity && cities.length) {
+    return options.replace(`value="${escapeHtml(cities[0])}"`, `value="${escapeHtml(cities[0])}" selected`);
+  }
+
+  return options || `<option value="">Selecione</option>`;
+}
+
+function bindStateCityFields(form) {
+  const stateSelect = form.querySelector('[name="state"]');
+  const citySelect = form.querySelector('[name="city"]');
+  if (!stateSelect || !citySelect) return;
+
+  const refreshCities = (preferredCity = '') => {
+    const currentCity = preferredCity || citySelect.value;
+    citySelect.innerHTML = renderCityOptions(stateSelect.value, currentCity);
+
+    if (!citySelect.value && stateSelect.value) {
+      citySelect.value = getDefaultCityForState(stateSelect.value);
+    }
+  };
+
+  stateSelect.addEventListener('change', () => {
+    refreshCities(getDefaultCityForState(stateSelect.value));
+  });
+
+  refreshCities(citySelect.value);
+}
+
+function syncInstallmentBreakdown(form) {
+  const hint = form.querySelector('#installment-breakdown-hint');
+  if (!hint) return;
+
+  if (getSelectedPaymentPlanType(form) !== PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING) {
+    hint.hidden = true;
+    hint.textContent = '';
+    return;
+  }
+
+  const items = collectItems(form);
+  const totalCents = sumCents(items.map((item) => item.amount));
+  const installmentCount = parseInt(form.querySelector('[name="installmentCount"]')?.value, 10) || 0;
+  const entryAmount = parseCurrencyInput(form.querySelector('[name="entryAmount"]')?.value || '');
+  const entryPercent = parseFloat(form.querySelector('[name="entryPercent"]')?.value) || 0;
+  const entry = entryAmount > 0 ? entryAmount : calculateEntryAmount(totalCents, entryPercent, null);
+
+  if (totalCents <= 0 || installmentCount <= 0) {
+    hint.hidden = true;
+    hint.textContent = '';
+    return;
+  }
+
+  const remaining = Math.max(0, totalCents - entry);
+
+  if (remaining <= 0) {
+    hint.textContent = 'Sem saldo para parcelar após a entrada.';
+    hint.hidden = false;
+    return;
+  }
+
+  const baseAmount = Math.floor(remaining / installmentCount);
+  const lastAmount = remaining - baseAmount * (installmentCount - 1);
+
+  if (installmentCount === 1) {
+    hint.textContent = `Restante: ${formatCurrency(remaining)} em 1 parcela de ${formatCurrency(lastAmount)}.`;
+  } else if (baseAmount === lastAmount) {
+    hint.textContent = `Restante: ${formatCurrency(remaining)} em ${installmentCount} parcelas de ${formatCurrency(baseAmount)}.`;
+  } else {
+    hint.textContent = `Restante: ${formatCurrency(remaining)} — ${installmentCount - 1}x de ${formatCurrency(baseAmount)} + 1x de ${formatCurrency(lastAmount)}.`;
+  }
+
+  hint.hidden = false;
+}
+
+function formatInstallmentDescription(inst) {
+  if (inst.number === 0) {
+    return `Entrada — ${formatCurrency(inst.expectedAmount)}`;
+  }
+  return `Parcela ${inst.number} — ${formatCurrency(inst.expectedAmount)}`;
+}
 
 function paymentPlanTypeOptions(selected = PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING) {
   return Object.entries(PAYMENT_PLAN_LABELS)
@@ -127,6 +247,7 @@ function applyPaymentPlanPreset(form) {
     if (intervalMonths) intervalMonths.value = '1';
     syncFirstDueFromEvent(form);
     updateTotalDisplay(form);
+    syncInstallmentBreakdown(form);
     return;
   }
 
@@ -147,6 +268,7 @@ function applyPaymentPlanPreset(form) {
       if (!firstDueDate.value) firstDueDate.value = toDateInputString(addMonths(closingDate, 1));
     }
     if (hint) hint.hidden = true;
+    syncInstallmentBreakdown(form);
     return;
   }
 
@@ -158,6 +280,7 @@ function applyPaymentPlanPreset(form) {
   }
   if (hint) hint.hidden = true;
   updateTotalDisplay(form);
+  syncInstallmentBreakdown(form);
 }
 
 function buildPaymentPlan(form, data, totalCents) {
@@ -178,20 +301,96 @@ function buildPaymentPlan(form, data, totalCents) {
   if (planType === PAYMENT_PLAN_TYPES.CASH) {
     return plan.map((inst) => ({
       ...inst,
-      description: 'Pagamento à vista',
+      description: `Pagamento à vista — ${formatCurrency(inst.expectedAmount)}`,
     }));
   }
 
-  return plan;
+  return plan.map((inst) => ({
+    ...inst,
+    description: formatInstallmentDescription(inst),
+  }));
 }
 
 function serviceTypeOptions(selected = '') {
-  return Object.entries(SERVICE_TYPE_LABELS)
+  const catalog = CATALOG_SERVICE_ORDER.map((value) => [value, SERVICE_TYPE_LABELS[value]]);
+  const others = Object.entries(SERVICE_TYPE_LABELS).filter(
+    ([value]) => !CATALOG_SERVICE_ORDER.includes(value)
+  );
+
+  return [...catalog, ...others]
     .map(
       ([value, label]) =>
         `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`
     )
     .join('');
+}
+
+function getSelectedServiceTypes(form) {
+  const types = [];
+  form.querySelectorAll('.contract-item-row').forEach((row) => {
+    const index = row.dataset.itemIndex;
+    const serviceType = form.querySelector(`[name="itemServiceType_${index}"]`)?.value;
+    if (serviceType) types.push(serviceType);
+  });
+  return types;
+}
+
+function syncServicePrices(form) {
+  const selectedTypes = getSelectedServiceTypes(form);
+
+  form.querySelectorAll('.contract-item-row').forEach((row) => {
+    const index = row.dataset.itemIndex;
+    const serviceType = form.querySelector(`[name="itemServiceType_${index}"]`)?.value;
+    const amountInput = form.querySelector(`[name="itemAmount_${index}"]`);
+    const descriptionInput = form.querySelector(`[name="itemDescription_${index}"]`);
+
+    if (!serviceType || !amountInput || !hasCatalogPrice(serviceType)) return;
+    if (amountInput.dataset.autoPrice === 'false') return;
+
+    const price = getServicePrice(serviceType, selectedTypes);
+    amountInput.value = formatCurrencyInput(price);
+
+    const label = SERVICE_TYPE_LABELS[serviceType] || '';
+    if (descriptionInput && (!descriptionInput.value.trim() || descriptionInput.dataset.autoDescription === 'true')) {
+      descriptionInput.value = label;
+      descriptionInput.dataset.autoDescription = 'true';
+    }
+  });
+
+  updateTotalDisplay(form);
+}
+
+function bindServiceItemPricing(form) {
+  const itemsContainer = form.querySelector('#contract-items');
+  if (!itemsContainer || itemsContainer.dataset.pricingBound === 'true') return;
+  itemsContainer.dataset.pricingBound = 'true';
+
+  itemsContainer.addEventListener('change', (event) => {
+    const select = event.target.closest('select[name^="itemServiceType_"]');
+    if (!select) return;
+
+    const index = select.name.replace('itemServiceType_', '');
+    const amountInput = form.querySelector(`[name="itemAmount_${index}"]`);
+    const descriptionInput = form.querySelector(`[name="itemDescription_${index}"]`);
+
+    if (amountInput) amountInput.dataset.autoPrice = 'true';
+    if (descriptionInput) descriptionInput.dataset.autoDescription = 'true';
+
+    if (descriptionInput && !descriptionInput.value.trim()) {
+      descriptionInput.value = SERVICE_TYPE_LABELS[select.value] || '';
+    }
+
+    syncServicePrices(form);
+  });
+
+  itemsContainer.addEventListener('input', (event) => {
+    if (event.target.name?.startsWith('itemAmount_')) {
+      event.target.dataset.autoPrice = 'false';
+    }
+    if (event.target.name?.startsWith('itemDescription_')) {
+      event.target.dataset.autoDescription = 'false';
+    }
+  });
 }
 
 function paymentMethodOptions(selected = '') {
@@ -210,15 +409,21 @@ function getContractFormStatus(contract) {
 }
 
 function buildItemRow(item = {}, index = 0) {
+  const serviceType = item.serviceType || SERVICE_TYPES.STORYMAKER;
+  const autoPrice = item.amount ? '' : 'true';
+  const autoDescription = item.description ? '' : 'true';
+  const amount = item.amount || (hasCatalogPrice(serviceType) ? getServicePrice(serviceType, [serviceType]) : 0);
+  const description = item.description || (hasCatalogPrice(serviceType) ? SERVICE_TYPE_LABELS[serviceType] : '');
+
   return `
     <div class="contract-item-row" data-item-index="${index}">
       <select class="form-field__input" name="itemServiceType_${index}">
-        ${serviceTypeOptions(item.serviceType || SERVICE_TYPES.OTHER)}
+        ${serviceTypeOptions(serviceType)}
       </select>
       <input class="form-field__input" name="itemDescription_${index}" placeholder="Descrição do serviço"
-        value="${escapeHtml(item.description || '')}" />
+        value="${escapeHtml(description)}" data-auto-description="${autoDescription}" />
       <input class="form-field__input currency-input" name="itemAmount_${index}" placeholder="0,00"
-        value="${item.amount ? formatCurrencyInput(item.amount) : ''}" />
+        value="${amount ? formatCurrencyInput(amount) : ''}" data-auto-price="${autoPrice}" />
       <button type="button" class="btn btn--ghost btn--sm" data-remove-item="${index}" aria-label="Remover item">
         <i data-lucide="trash-2" aria-hidden="true"></i>
       </button>
@@ -328,6 +533,7 @@ function updateTotalDisplay(form) {
   const totalEl = form.querySelector('#contract-total');
   if (totalEl) totalEl.textContent = formatCurrency(total);
   syncEntryFromPercent(form, total);
+  syncInstallmentBreakdown(form);
   return total;
 }
 
@@ -462,6 +668,7 @@ export function openContractFormModal({
   onSaved,
 }) {
   const isEdit = Boolean(contract);
+  const defaults = getContractDefaults(contract);
   const form = document.createElement('form');
   form.id = 'contract-form';
   form.className = 'contract-form';
@@ -474,7 +681,10 @@ export function openContractFormModal({
     )
     .join('');
 
-  const initialItems = items.length > 0 ? items : [{ serviceType: SERVICE_TYPES.OTHER, description: '', amount: 0 }];
+  const initialItems =
+    items.length > 0
+      ? items
+      : [{ serviceType: SERVICE_TYPES.STORYMAKER, description: SERVICE_TYPE_LABELS[SERVICE_TYPES.STORYMAKER], amount: 0 }];
 
   form.innerHTML = `
     <div class="form-section">
@@ -515,7 +725,7 @@ export function openContractFormModal({
         </div>
         <div class="form-field">
           <label class="form-field__label">Horário</label>
-          <input class="form-field__input" type="time" name="eventTime" value="${contract?.eventTime || ''}" />
+          <input class="form-field__input" type="time" name="eventTime" value="${defaults.eventTime}" />
         </div>
         <div class="form-field form-field--full">
           <label class="form-field__label">Local</label>
@@ -523,18 +733,20 @@ export function openContractFormModal({
         </div>
         <div class="form-field">
           <label class="form-field__label">Cidade</label>
-          <input class="form-field__input" name="city" value="${escapeHtml(contract?.city || '')}" />
+          <select class="form-field__input" name="city">
+            ${renderCityOptions(defaults.state, defaults.city)}
+          </select>
         </div>
         <div class="form-field">
           <label class="form-field__label">Estado</label>
           <select class="form-field__input" name="state">
             <option value="">UF</option>
-            ${BRAZILIAN_STATES.map((uf) => `<option value="${uf}" ${contract?.state === uf ? 'selected' : ''}>${uf}</option>`).join('')}
+            ${BRAZILIAN_STATES.map((uf) => `<option value="${uf}" ${defaults.state === uf ? 'selected' : ''}>${uf}</option>`).join('')}
           </select>
         </div>
         <div class="form-field">
           <label class="form-field__label">Data de fechamento</label>
-          <input class="form-field__input" type="date" name="closingDate" value="${toDateInputValue(contract?.closingDate)}" />
+          <input class="form-field__input" type="date" name="closingDate" value="${defaults.closingDate}" />
         </div>
       </div>
     </div>
@@ -576,8 +788,8 @@ export function openContractFormModal({
         </div>
         <div class="form-field">
           <label class="form-field__label">Valor da entrada</label>
-          <input class="form-field__input" name="entryAmount" readonly
-            title="Calculado automaticamente pelo percentual de entrada" />
+          <input class="form-field__input currency-input" name="entryAmount"
+            title="Informe o valor da entrada ou use o percentual acima" />
         </div>
         <div class="form-field">
           <label class="form-field__label">Forma de pagamento da entrada</label>
@@ -586,6 +798,7 @@ export function openContractFormModal({
         <div class="form-field">
           <label class="form-field__label" id="installment-count-label">Nº de parcelas antes do casamento</label>
           <input class="form-field__input" type="number" name="installmentCount" min="1" max="24" value="4" />
+          <p class="form-field__hint" id="installment-breakdown-hint" hidden></p>
           <span class="form-field__error" data-error="installmentCount" hidden></span>
         </div>
         <div class="form-field">
@@ -661,6 +874,7 @@ export function openContractFormModal({
     const newRow = container.lastElementChild;
     newRow?.querySelectorAll('.currency-input').forEach(bindCurrencyInput);
     bindItemEvents();
+    syncServicePrices(form);
   });
 
   function bindItemEvents() {
@@ -672,16 +886,20 @@ export function openContractFormModal({
           return;
         }
         btn.closest('.contract-item-row').remove();
-        updateTotalDisplay(form);
+        syncServicePrices(form);
       };
     });
   }
 
   bindItemEvents();
+  bindServiceItemPricing(form);
+  bindStateCityFields(form);
   if (!isEdit) {
     applyPaymentPlanPreset(form);
+    syncServicePrices(form);
+  } else {
+    updateTotalDisplay(form);
   }
-  updateTotalDisplay(form);
 
   form.querySelector('[name="paymentPlanType"]')?.addEventListener('change', () => {
     applyPaymentPlanPreset(form);
@@ -703,10 +921,15 @@ export function openContractFormModal({
 
   form.querySelector('[name="installmentCount"]')?.addEventListener('input', () => {
     syncFirstDueFromEvent(form);
+    syncInstallmentBreakdown(form);
   });
 
   form.querySelector('[name="entryPercent"]')?.addEventListener('input', () => {
     updateTotalDisplay(form);
+  });
+
+  form.querySelector('[name="entryAmount"]')?.addEventListener('input', () => {
+    syncInstallmentBreakdown(form);
   });
 
   footer.querySelector('[data-action="cancel"]').addEventListener('click', close);

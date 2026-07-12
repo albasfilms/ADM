@@ -12,7 +12,7 @@ import { CONTRACT_STATUS } from '../utils/constants.js';
 import { escapeHtml, getFirestoreErrorMessage, renderIcons, showToast } from '../utils/dom.js';
 import { formatBudgetPhone } from '../utils/budgetDisplay.js';
 import { formatCurrency } from '../utils/currency.js';
-import { toJsDate, startOfDay } from '../utils/installmentStatus.js';
+import { toJsDate, startOfDay, getInstallmentRemaining } from '../utils/installmentStatus.js';
 import { createContractStatusBadge } from '../components/StatusBadge.js';
 
 const WEEKDAYS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
@@ -83,26 +83,41 @@ function formatYearLabel(year) {
   return String(year);
 }
 
-function renderDayButton(date, { eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey, compact = false }) {
+function getPaymentsForDate(paymentsByDate, dateKey) {
+  if (!paymentsByDate) return [];
+  return paymentsByDate.get(dateKey) || [];
+}
+
+function renderDayButton(date, { eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey, paymentsByDate, compact = false }) {
   const dateKey = toDateKey(date);
   const contracts = eventsByDate.get(dateKey) || [];
   const budgets = getBudgetsForDate(budgetEntries, dateKey);
   const state = getDayState(dateKey, contracts, budgetEntries, blockedDays, maxEventsPerDay);
+  const pendingPayments = compact ? [] : getPaymentsForDate(paymentsByDate, dateKey);
+  const hasPaymentDue = pendingPayments.length > 0;
   const todayKey = toDateKey(new Date());
   const isToday = dateKey === todayKey;
   const isSelected = dateKey === selectedDateKey;
   const isPast = startOfDay(date) < startOfDay(new Date());
   const compactClass = compact ? ' calendar-day--mini' : '';
   const eventCount = countDateOccupancy(contracts, budgets);
+  const paymentLabel = hasPaymentDue
+    ? `${pendingPayments.length} pagamento(s) a receber`
+    : '';
 
   return `
     <button
       type="button"
-      class="calendar-day calendar-day--${state}${compactClass}${isToday ? ' calendar-day--today' : ''}${isSelected ? ' calendar-day--selected' : ''}${isPast ? ' calendar-day--past' : ''}"
+      class="calendar-day calendar-day--${state}${compactClass}${isToday ? ' calendar-day--today' : ''}${isSelected ? ' calendar-day--selected' : ''}${isPast ? ' calendar-day--past' : ''}${hasPaymentDue ? ' calendar-day--has-payment' : ''}"
       data-date-key="${dateKey}"
-      aria-label="${date.getDate()} — ${eventCount} evento(s)"
+      aria-label="${date.getDate()} — ${eventCount} evento(s)${hasPaymentDue ? ` — ${paymentLabel}` : ''}"
     >
       <span class="calendar-day__number">${date.getDate()}</span>
+      ${
+        hasPaymentDue
+          ? `<span class="calendar-day__payment" title="${paymentLabel}" aria-hidden="true">$</span>`
+          : ''
+      }
       ${
         !compact && eventCount
           ? `<span class="calendar-day__dots" aria-hidden="true">${Array.from({ length: Math.min(eventCount, 3) })
@@ -114,7 +129,7 @@ function renderDayButton(date, { eventsByDate, budgetEntries, blockedDays, maxEv
   `;
 }
 
-function renderDayDetail(dateKey, contracts, budgetEntries, blockedDays, maxEventsPerDay) {
+function renderDayDetail(dateKey, contracts, budgetEntries, blockedDays, maxEventsPerDay, paymentsByDate) {
   if (!dateKey) {
     return `<p class="text-muted">Selecione um dia no calendário para ver detalhes.</p>`;
   }
@@ -127,6 +142,7 @@ function renderDayDetail(dateKey, contracts, budgetEntries, blockedDays, maxEven
     year: 'numeric',
   });
   const budgets = getBudgetsForDate(budgetEntries, dateKey);
+  const pendingPayments = getPaymentsForDate(paymentsByDate, dateKey);
   const state = getDayState(dateKey, contracts, budgetEntries, blockedDays, maxEventsPerDay);
   const blockReason = blockedDays[dateKey];
   const isBlocked = Boolean(blockReason);
@@ -183,6 +199,30 @@ function renderDayDetail(dateKey, contracts, budgetEntries, blockedDays, maxEven
       `
         )
         .join('')
+    : '';
+
+  const paymentsHtml = pendingPayments.length
+    ? `
+      <div class="calendar-detail__payments">
+        <p class="calendar-detail__payments-title">Pagamentos a receber</p>
+        ${pendingPayments
+          .map(
+            ({ contract, installment }) => `
+          <a href="#/contratos/${contract.id}" class="calendar-payment-item">
+            <div class="calendar-payment-item__header">
+              <strong>${escapeHtml(contract.clientName || contract.title || 'Cliente')}</strong>
+              <span class="calendar-payment-item__amount">${formatCurrency(getInstallmentRemaining(installment))}</span>
+            </div>
+            <span class="calendar-payment-item__meta">
+              ${installment.number === 0 ? 'Entrada' : `Parcela ${installment.number}`}
+              ${contract.title ? ` · ${escapeHtml(contract.title)}` : ''}
+            </span>
+          </a>
+        `
+          )
+          .join('')}
+      </div>
+    `
     : '';
 
   const eventsHtml =
@@ -246,19 +286,20 @@ function renderDayDetail(dateKey, contracts, budgetEntries, blockedDays, maxEven
         ${stateLabels[state] || '—'}
       </p>
       <div class="calendar-detail__events">${eventsHtml}</div>
+      ${paymentsHtml}
       ${budgetSection}
       ${blockSection}
     </div>
   `;
 }
 
-function renderMonthGrid({ year, month, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey }) {
+function renderMonthGrid({ year, month, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey, paymentsByDate }) {
   const cells = buildMonthMatrix(year, month);
   const weekdays = WEEKDAYS.map((day) => `<div class="calendar-weekday">${day}</div>`).join('');
   const dayCells = cells
     .map((date) => {
       if (!date) return `<div class="calendar-day calendar-day--empty" aria-hidden="true"></div>`;
-      return renderDayButton(date, { eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey });
+      return renderDayButton(date, { eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey, paymentsByDate });
     })
     .join('');
 
@@ -318,20 +359,23 @@ function renderYearGrid({ year, eventsByDate, budgetEntries, blockedDays, maxEve
 function countMonthStats(year, month, eventsByDate, budgetEntries, blockedDaysMap, maxEventsPerDay) {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   let eventDays = 0;
+  let pendingBudgets = 0;
   let availableDays = 0;
   let blockedCount = 0;
 
   for (let day = 1; day <= daysInMonth; day += 1) {
     const dateKey = toDateKey(new Date(year, month, day));
     const contracts = eventsByDate.get(dateKey) || [];
+    const budgets = getBudgetsForDate(budgetEntries, dateKey);
     const state = getDayState(dateKey, contracts, budgetEntries, blockedDaysMap, maxEventsPerDay);
 
-    if (countDateOccupancy(contracts, getBudgetsForDate(budgetEntries, dateKey))) eventDays += 1;
+    if (contracts.length > 0) eventDays += 1;
+    if (budgets.length > 0 && contracts.length === 0) pendingBudgets += budgets.length;
     if (state === 'blocked') blockedCount += 1;
     if (state === 'available') availableDays += 1;
   }
 
-  return { eventDays, availableDays, blockedDays: blockedCount };
+  return { eventDays, pendingBudgets, availableDays, blockedDays: blockedCount };
 }
 
 function countYearStats(year, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay) {
@@ -340,10 +384,11 @@ function countYearStats(year, eventsByDate, budgetEntries, blockedDays, maxEvent
   ).reduce(
     (acc, stats) => ({
       eventDays: acc.eventDays + stats.eventDays,
+      pendingBudgets: acc.pendingBudgets + stats.pendingBudgets,
       availableDays: acc.availableDays + stats.availableDays,
       blockedDays: acc.blockedDays + stats.blockedDays,
     }),
-    { eventDays: 0, availableDays: 0, blockedDays: 0 }
+    { eventDays: 0, pendingBudgets: 0, availableDays: 0, blockedDays: 0 }
   );
 }
 
@@ -365,7 +410,7 @@ function bindCalendarPage(container, state) {
   };
 
   const render = () => {
-    const { year, month, viewMode, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey } = state;
+    const { year, month, viewMode, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey, paymentsByDate } = state;
 
     container.querySelector('#calendar-period-label').textContent =
       viewMode === 'year' ? formatYearLabel(year) : formatMonthLabel(year, month);
@@ -385,7 +430,7 @@ function bindCalendarPage(container, state) {
     container.querySelector('#calendar-grid').innerHTML =
       viewMode === 'year'
         ? renderYearGrid({ year, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey })
-        : renderMonthGrid({ year, month, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey });
+        : renderMonthGrid({ year, month, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey, paymentsByDate });
 
     const stats =
       viewMode === 'year'
@@ -393,6 +438,7 @@ function bindCalendarPage(container, state) {
         : countMonthStats(year, month, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay);
 
     container.querySelector('#calendar-stat-events').textContent = String(stats.eventDays);
+    container.querySelector('#calendar-stat-budgets').textContent = String(stats.pendingBudgets);
     container.querySelector('#calendar-stat-available').textContent = String(stats.availableDays);
     container.querySelector('#calendar-stat-blocked').textContent = String(stats.blockedDays);
 
@@ -402,7 +448,8 @@ function bindCalendarPage(container, state) {
       selectedContracts,
       budgetEntries,
       blockedDays,
-      maxEventsPerDay
+      maxEventsPerDay,
+      paymentsByDate
     );
 
     setViewToggleActive(container, viewMode);
@@ -576,6 +623,10 @@ export async function renderCalendarPage(container) {
             <strong id="calendar-stat-events">0</strong>
             <span>com evento</span>
           </div>
+          <div class="calendar-header-summary__chip calendar-header-summary__chip--budget">
+            <strong id="calendar-stat-budgets">0</strong>
+            <span>orçamentos pendentes</span>
+          </div>
           <div class="calendar-header-summary__chip">
             <strong id="calendar-stat-available">0</strong>
             <span>disponíveis</span>
@@ -648,6 +699,7 @@ export async function renderCalendarPage(container) {
       blockedDays: data.blockedDays,
       budgetEntries: data.budgetEntries,
       maxEventsPerDay: data.maxEventsPerDay,
+      paymentsByDate: data.paymentsByDate,
     };
 
     bindCalendarPage(container, state);

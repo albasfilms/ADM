@@ -22,6 +22,14 @@ import {
 } from '../utils/constants.js';
 import { sumCents } from '../utils/currency.js';
 import { createAuditLog } from './auditService.js';
+import { getCached, invalidateCacheByPrefix } from '../utils/dataCache.js';
+
+function invalidateContractsCache() {
+  invalidateCacheByPrefix('contracts:');
+  invalidateCacheByPrefix('installments:');
+  invalidateCacheByPrefix('dashboard:');
+  invalidateCacheByPrefix('calendar:');
+}
 
 const COLLECTION = 'contracts';
 
@@ -37,13 +45,15 @@ function matchesSearch(contract, search) {
 import { CLIENT_STATUS } from '../utils/constants.js';
 
 export async function getActiveClients() {
-  const snapshot = await getDocs(
-    query(collection(db, 'clients'), where('status', '==', CLIENT_STATUS.ACTIVE))
-  );
+  return getCached('contracts:active-clients', async () => {
+    const snapshot = await getDocs(
+      query(collection(db, 'clients'), where('status', '==', CLIENT_STATUS.ACTIVE))
+    );
 
-  return snapshot.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
+    return snapshot.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
+  });
 }
 
 export async function getContracts({
@@ -54,41 +64,45 @@ export async function getContracts({
   pageSize = PAGE_SIZE,
   cursor = null,
 } = {}) {
-  const constraints = [];
+  const cacheKey = `contracts:list:${status}:${sortBy}:${sortDir}:${search}:${pageSize}:${cursor || ''}`;
 
-  if (status && status !== 'all') {
-    constraints.push(where('status', '==', status));
-  }
+  return getCached(cacheKey, async () => {
+    const constraints = [];
 
-  const field = sortBy === 'title' ? 'title' : sortBy === 'eventDate' ? 'eventDate' : 'createdAt';
-  constraints.push(orderBy(field, sortDir === 'asc' ? 'asc' : 'desc'));
+    if (status && status !== 'all') {
+      constraints.push(where('status', '==', status));
+    }
 
-  if (search) {
-    constraints.push(limit(300));
-  } else {
-    constraints.push(limit(pageSize));
-    if (cursor) constraints.push(startAfter(cursor));
-  }
+    const field = sortBy === 'title' ? 'title' : sortBy === 'eventDate' ? 'eventDate' : 'createdAt';
+    constraints.push(orderBy(field, sortDir === 'asc' ? 'asc' : 'desc'));
 
-  const snapshot = await getDocs(query(collection(db, COLLECTION), ...constraints));
-  let contracts = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+    if (search) {
+      constraints.push(limit(300));
+    } else {
+      constraints.push(limit(pageSize));
+      if (cursor) constraints.push(startAfter(cursor));
+    }
 
-  if (search) {
-    contracts = contracts.filter((c) => matchesSearch(c, search));
-    const start = cursor ? Number(cursor) : 0;
-    const paginated = contracts.slice(start, start + pageSize);
+    const snapshot = await getDocs(query(collection(db, COLLECTION), ...constraints));
+    let contracts = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    if (search) {
+      contracts = contracts.filter((c) => matchesSearch(c, search));
+      const start = cursor ? Number(cursor) : 0;
+      const paginated = contracts.slice(start, start + pageSize);
+      return {
+        contracts: paginated,
+        lastCursor: start + pageSize < contracts.length ? String(start + pageSize) : null,
+        hasMore: start + pageSize < contracts.length,
+      };
+    }
+
     return {
-      contracts: paginated,
-      lastCursor: start + pageSize < contracts.length ? String(start + pageSize) : null,
-      hasMore: start + pageSize < contracts.length,
+      contracts,
+      lastCursor: snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null,
+      hasMore: snapshot.docs.length === pageSize,
     };
-  }
-
-  return {
-    contracts,
-    lastCursor: snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null,
-    hasMore: snapshot.docs.length === pageSize,
-  };
+  }, search ? 15_000 : 60_000);
 }
 
 export async function getContractById(id) {
@@ -105,10 +119,12 @@ export async function getContractItems(contractId) {
 }
 
 export async function getContractInstallments(contractId) {
-  const snapshot = await getDocs(collection(db, COLLECTION, contractId, 'installments'));
-  return snapshot.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+  return getCached(`installments:${contractId}`, async () => {
+    const snapshot = await getDocs(collection(db, COLLECTION, contractId, 'installments'));
+    return snapshot.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+  });
 }
 
 export async function getContractFull(contractId) {
@@ -188,6 +204,7 @@ export async function createContract(data, items, installments, client) {
   });
 
   await batch.commit();
+  invalidateContractsCache();
   return contractRef.id;
 }
 
@@ -222,6 +239,7 @@ export async function updateContract(contractId, data, items, client, existingCo
   });
 
   await batch.commit();
+  invalidateContractsCache();
 }
 
 export async function cancelContract(contractId) {
@@ -229,6 +247,7 @@ export async function cancelContract(contractId) {
     status: CONTRACT_STATUS.CANCELLED,
     updatedAt: serverTimestamp(),
   });
+  invalidateContractsCache();
 }
 
 export async function finalizeContract(contractId) {
@@ -236,6 +255,7 @@ export async function finalizeContract(contractId) {
     status: CONTRACT_STATUS.FINISHED,
     updatedAt: serverTimestamp(),
   });
+  invalidateContractsCache();
 }
 
 export async function deleteContract(contractId, user) {
@@ -282,4 +302,6 @@ export async function deleteContract(contractId, user) {
       user,
     });
   }
+
+  invalidateContractsCache();
 }

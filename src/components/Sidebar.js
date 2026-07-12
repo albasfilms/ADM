@@ -3,6 +3,7 @@ import { logout } from '../services/authService.js';
 import { ROLE_LABELS } from '../utils/permissions.js';
 import { getInitials, renderIcons } from '../utils/dom.js';
 import { BRAND_LOGO } from '../utils/brandAssets.js';
+import { prefetchRoute } from '../utils/prefetch.js';
 
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: 'layout-dashboard' },
@@ -14,6 +15,16 @@ const NAV_ITEMS = [
   { path: '/links', label: 'Links', icon: 'link' },
   { path: '/relatorios', label: 'Relatórios', icon: 'bar-chart-3' },
 ];
+
+export function updateSidebarActiveState(sidebar, currentPath) {
+  if (!sidebar) return;
+
+  sidebar.querySelectorAll('[data-nav-link]').forEach((link) => {
+    const href = link.getAttribute('href')?.replace('#', '') || '/';
+    const isActive = href === '/' ? currentPath === '/' : currentPath.startsWith(href);
+    link.classList.toggle('sidebar__link--active', isActive);
+  });
+}
 
 export function createSidebar(currentPath) {
   const { profile } = getState();
@@ -73,6 +84,11 @@ export function createSidebar(currentPath) {
 
   sidebar.querySelectorAll('[data-nav-link]').forEach((link) => {
     link.addEventListener('click', () => closeSidebar());
+
+    link.addEventListener('mouseenter', () => {
+      const href = link.getAttribute('href')?.replace('#', '') || '/';
+      prefetchRoute(href);
+    });
   });
 
   sidebar.querySelector('#logout-btn').addEventListener('click', async () => {

@@ -1,4 +1,5 @@
 import { getState, toggleSidebar } from '../appState.js';
+import { updateShellUI } from '../router.js';
 import { renderIcons } from '../utils/dom.js';
 
 export function createMobileMenuButton() {
@@ -12,9 +13,7 @@ export function createMobileMenuButton() {
 
   button.addEventListener('click', () => {
     toggleSidebar();
-    const { sidebarOpen } = getState();
-    button.setAttribute('aria-expanded', String(sidebarOpen));
-    button.setAttribute('aria-label', sidebarOpen ? 'Fechar menu' : 'Abrir menu');
+    updateShellUI();
   });
 
   renderIcons(button);

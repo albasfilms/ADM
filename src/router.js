@@ -1,7 +1,9 @@
 import { getState, isAuthenticated, closeSidebar } from './appState.js';
-import { createSidebar } from './components/Sidebar.js';
+import { createSidebar, updateSidebarActiveState } from './components/Sidebar.js';
 import { createMobileMenuButton } from './components/Header.js';
 import { createLoadingState } from './components/LoadingState.js';
+import { clearDataCache } from './utils/dataCache.js';
+import { resetPrefetchState } from './utils/prefetch.js';
 import { renderLoginPage } from './pages/LoginPage.js';
 import {
   renderDashboardPage,
@@ -64,6 +66,10 @@ const ROUTES = {
   },
 };
 
+let shellElements = null;
+let lastRenderedPath = null;
+let lastAuthSignature = null;
+
 export function getCurrentPath() {
   const hash = window.location.hash.replace('#', '') || '/';
   const path = hash.split('?')[0];
@@ -84,6 +90,63 @@ function resolveRoute(path) {
   return ROUTES['/'];
 }
 
+function getAuthSignature() {
+  const { authReady, authUser, profile } = getState();
+  return `${authReady}:${authUser?.uid || ''}:${profile?.active || ''}`;
+}
+
+function destroyShell() {
+  shellElements = null;
+  lastRenderedPath = null;
+}
+
+export function updateShellUI() {
+  if (!shellElements) return;
+
+  const { sidebarOpen } = getState();
+  shellElements.sidebar.classList.toggle('sidebar--open', sidebarOpen);
+  shellElements.overlay.classList.toggle('sidebar-overlay--visible', sidebarOpen);
+
+  const menuBtn = document.getElementById('menu-toggle');
+  if (menuBtn) {
+    menuBtn.setAttribute('aria-expanded', String(sidebarOpen));
+    menuBtn.setAttribute('aria-label', sidebarOpen ? 'Fechar menu' : 'Abrir menu');
+  }
+
+  updateSidebarActiveState(shellElements.sidebar, getCurrentPath());
+}
+
+function buildShell() {
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  app.className = 'app-shell';
+
+  const sidebar = createSidebar(getCurrentPath());
+  const overlay = document.createElement('div');
+  overlay.className = 'sidebar-overlay';
+  overlay.addEventListener('click', () => {
+    closeSidebar();
+    updateShellUI();
+  });
+
+  const main = document.createElement('div');
+  main.className = 'app-shell__main';
+
+  const pageContent = document.createElement('main');
+  pageContent.className = 'app-shell__content';
+  pageContent.id = 'page-content';
+
+  main.appendChild(pageContent);
+  app.appendChild(sidebar);
+  app.appendChild(overlay);
+  app.appendChild(createMobileMenuButton());
+  app.appendChild(main);
+
+  shellElements = { sidebar, overlay, pageContent, app };
+  updateShellUI();
+  return pageContent;
+}
+
 function navigate(path, replace = false) {
   const normalized = path.startsWith('/') ? path : `/${path}`;
   const newHash = `#${normalized}`;
@@ -100,43 +163,8 @@ function navigate(path, replace = false) {
   }
 }
 
-function renderAppShell(route, contentContainer) {
-  const { sidebarOpen } = getState();
-  const app = document.getElementById('app');
-
-  app.innerHTML = '';
-  app.className = 'app-shell';
-
-  const sidebar = createSidebar(getCurrentPath());
-  if (sidebarOpen) {
-    sidebar.classList.add('sidebar--open');
-  }
-
-  const overlay = document.createElement('div');
-  overlay.className = `sidebar-overlay ${sidebarOpen ? 'sidebar-overlay--visible' : ''}`;
-  overlay.addEventListener('click', () => {
-    closeSidebar();
-    render();
-  });
-
-  const main = document.createElement('div');
-  main.className = 'app-shell__main';
-
-  const content = document.createElement('main');
-  content.className = 'app-shell__content';
-  content.id = 'page-content';
-  content.appendChild(contentContainer);
-
-  main.appendChild(content);
-  app.appendChild(sidebar);
-  app.appendChild(overlay);
-  app.appendChild(createMobileMenuButton());
-  app.appendChild(main);
-
-  document.title = `${route.title} — Albas Films`;
-}
-
 function renderLogin(route) {
+  destroyShell();
   const app = document.getElementById('app');
   app.className = '';
   app.innerHTML = '';
@@ -146,10 +174,32 @@ function renderLogin(route) {
   document.title = `${route.title} — Albas Films`;
 }
 
+function renderPage(route, path) {
+  if (!shellElements) {
+    buildShell();
+  } else {
+    updateShellUI();
+  }
+
+  if (lastRenderedPath === path) {
+    return;
+  }
+
+  lastRenderedPath = path;
+  document.title = `${route.title} — Albas Films`;
+
+  const pageContent = shellElements.pageContent;
+  pageContent.innerHTML = '';
+  const container = document.createElement('div');
+  pageContent.appendChild(container);
+  route.render(container);
+}
+
 export function render() {
   const { authReady } = getState();
 
   if (!authReady) {
+    destroyShell();
     const app = document.getElementById('app');
     app.className = '';
     app.innerHTML = '';
@@ -160,6 +210,14 @@ export function render() {
   const path = getCurrentPath();
   const route = resolveRoute(path);
   const authenticated = isAuthenticated();
+  const authSignature = getAuthSignature();
+
+  if (authSignature !== lastAuthSignature) {
+    clearDataCache();
+    resetPrefetchState();
+    destroyShell();
+    lastAuthSignature = authSignature;
+  }
 
   if (route.requiresAuth && !authenticated) {
     navigate('/login', true);
@@ -176,9 +234,17 @@ export function render() {
     return;
   }
 
-  const pageContent = document.createElement('div');
-  route.render(pageContent);
-  renderAppShell(route, pageContent);
+  if (!shellElements) {
+    renderPage(route, path);
+    return;
+  }
+
+  if (lastRenderedPath === path) {
+    updateShellUI();
+    return;
+  }
+
+  renderPage(route, path);
 }
 
 export function initRouter() {

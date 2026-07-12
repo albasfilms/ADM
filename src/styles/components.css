@@ -1841,6 +1841,10 @@
   line-height: 1;
 }
 
+.calendar-header-summary__chip--budget strong {
+  color: #0369a1;
+}
+
 .calendar-card-legend {
   padding: var(--space-3) var(--space-5);
   border-bottom: 1px solid var(--color-gray-100);
@@ -2111,6 +2115,29 @@
   font-weight: 600;
 }
 
+.calendar-day__payment {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #15803d;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  border-radius: 50%;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.calendar-day--has-payment .calendar-day__number {
+  padding-right: var(--space-4);
+}
+
 .calendar-day__dots {
   display: flex;
   gap: 3px;
@@ -2221,6 +2248,57 @@
   flex-direction: column;
   gap: var(--space-3);
   margin-bottom: var(--space-4);
+}
+
+.calendar-detail__payments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.calendar-detail__payments-title {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--color-gray-500);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.calendar-payment-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid #bbf7d0;
+  border-radius: var(--radius-md);
+  background: #f0fdf4;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.calendar-payment-item:hover {
+  border-color: #86efac;
+  box-shadow: var(--shadow-sm);
+}
+
+.calendar-payment-item__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.calendar-payment-item__amount {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: #15803d;
+  white-space: nowrap;
+}
+
+.calendar-payment-item__meta {
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-600);
 }
 
 .calendar-block-form {
