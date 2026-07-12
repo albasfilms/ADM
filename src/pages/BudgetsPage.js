@@ -7,6 +7,7 @@ import { createEmptyState } from '../components/EmptyState.js';
 import { showConfirmModal } from '../components/ConfirmModal.js';
 import { createSkeletonRows } from '../components/Skeleton.js';
 import { formatBudgetDate, formatBudgetPhone } from '../utils/budgetDisplay.js';
+import { formatCurrency } from '../utils/currency.js';
 import { escapeHtml, getFirestoreErrorMessage, renderIcons, showToast } from '../utils/dom.js';
 
 function renderBudgetCard(entry) {
@@ -37,6 +38,7 @@ function renderBudgetCard(entry) {
         <i data-lucide="calendar" aria-hidden="true"></i>
         ${escapeHtml(formatBudgetDate(entry.dateKey))}
       </p>
+      ${entry.amount ? `<p class="budget-card__amount">${formatCurrency(entry.amount)}</p>` : ''}
       ${entry.phone ? `<p class="budget-card__phone">${escapeHtml(formatBudgetPhone(entry.phone))}</p>` : ''}
       ${entry.notes ? `<p class="budget-card__notes">${escapeHtml(entry.notes)}</p>` : ''}
       <footer class="budget-card__meta">

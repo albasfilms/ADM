@@ -11,6 +11,7 @@ import { showConfirmModal } from '../components/ConfirmModal.js';
 import { CONTRACT_STATUS } from '../utils/constants.js';
 import { escapeHtml, getFirestoreErrorMessage, renderIcons, showToast } from '../utils/dom.js';
 import { formatBudgetPhone } from '../utils/budgetDisplay.js';
+import { formatCurrency } from '../utils/currency.js';
 import { toJsDate, startOfDay } from '../utils/installmentStatus.js';
 import { createContractStatusBadge } from '../components/StatusBadge.js';
 
@@ -176,6 +177,7 @@ function renderDayDetail(dateKey, contracts, budgetEntries, blockedDays, maxEven
             </button>
           </div>
           ${entry.phone ? `<span class="calendar-budget-item__meta">${escapeHtml(formatBudgetPhone(entry.phone))}</span>` : ''}
+          ${entry.amount ? `<span class="calendar-budget-item__amount">${formatCurrency(entry.amount)}</span>` : ''}
           ${entry.notes ? `<p class="calendar-budget-item__notes">${escapeHtml(entry.notes)}</p>` : ''}
         </article>
       `
@@ -565,9 +567,26 @@ export async function renderCalendarPage(container) {
   const now = new Date();
 
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header calendar-page-header">
       <h2 class="page-header__title">Calendário</h2>
-      <p class="page-header__subtitle">Visualize seus eventos e controle a disponibilidade</p>
+      <div class="calendar-header-summary">
+        <span class="calendar-header-summary__label" id="calendar-summary-title">Resumo do ano</span>
+        <div class="calendar-header-summary__stats">
+          <div class="calendar-header-summary__chip">
+            <strong id="calendar-stat-events">0</strong>
+            <span>com evento</span>
+          </div>
+          <div class="calendar-header-summary__chip">
+            <strong id="calendar-stat-available">0</strong>
+            <span>disponíveis</span>
+          </div>
+          <div class="calendar-header-summary__chip">
+            <strong id="calendar-stat-blocked">0</strong>
+            <span>bloqueados</span>
+          </div>
+        </div>
+      </div>
+      <div class="calendar-page-header__spacer" aria-hidden="true"></div>
     </div>
 
     <div class="calendar-layout">
@@ -590,6 +609,14 @@ export async function renderCalendarPage(container) {
             <button type="button" class="btn btn--secondary btn--sm" id="calendar-today">Hoje</button>
           </div>
         </div>
+        <div class="calendar-card-legend">
+          <ul class="calendar-legend calendar-legend--inline" aria-label="Legenda do calendário">
+            <li><span class="calendar-legend__dot calendar-legend__dot--available"></span> Disponível</li>
+            <li><span class="calendar-legend__dot calendar-legend__dot--booked"></span> Ocupado</li>
+            <li><span class="calendar-legend__dot calendar-legend__dot--tentative"></span> Orçamento</li>
+            <li><span class="calendar-legend__dot calendar-legend__dot--blocked"></span> Indisponível</li>
+          </ul>
+        </div>
         <div class="card__body">
           <div class="calendar-grid" id="calendar-grid">
             <p class="text-muted">Carregando calendário...</p>
@@ -598,29 +625,6 @@ export async function renderCalendarPage(container) {
       </div>
 
       <aside class="calendar-sidebar">
-        <div class="card">
-          <div class="card__header"><h3 class="card__title">Legenda</h3></div>
-          <div class="card__body">
-            <ul class="calendar-legend">
-              <li><span class="calendar-legend__dot calendar-legend__dot--available"></span> Disponível</li>
-              <li><span class="calendar-legend__dot calendar-legend__dot--booked"></span> Ocupado</li>
-              <li><span class="calendar-legend__dot calendar-legend__dot--tentative"></span> Orçamento</li>
-              <li><span class="calendar-legend__dot calendar-legend__dot--blocked"></span> Indisponível</li>
-            </ul>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card__header"><h3 class="card__title" id="calendar-summary-title">Resumo do ano</h3></div>
-          <div class="card__body">
-            <dl class="detail-list">
-              <div class="detail-list__item"><dt>Dias com evento</dt><dd id="calendar-stat-events">0</dd></div>
-              <div class="detail-list__item"><dt>Dias disponíveis</dt><dd id="calendar-stat-available">0</dd></div>
-              <div class="detail-list__item"><dt>Dias bloqueados</dt><dd id="calendar-stat-blocked">0</dd></div>
-            </dl>
-          </div>
-        </div>
-
         <div class="card">
           <div class="card__header"><h3 class="card__title">Detalhes do dia</h3></div>
           <div class="card__body" id="calendar-detail">

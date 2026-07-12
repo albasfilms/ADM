@@ -54,7 +54,7 @@ export function getFirestoreErrorMessage(error, fallback = 'Erro ao salvar. Tent
   const message = String(error.message || '').toLowerCase();
 
   if (code === 'permission-denied' || message.includes('permission')) {
-    return 'Sem permissão no Firestore. Publique as regras com: firebase deploy --only firestore:rules';
+    return 'Sem permissão no Firestore. Verifique se você está logado e tente novamente.';
   }
 
   if (code === 'failed-precondition') {

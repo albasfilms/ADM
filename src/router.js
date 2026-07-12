@@ -1,6 +1,6 @@
 import { getState, isAuthenticated, closeSidebar } from './appState.js';
 import { createSidebar } from './components/Sidebar.js';
-import { createHeader } from './components/Header.js';
+import { createMobileMenuButton } from './components/Header.js';
 import { createLoadingState } from './components/LoadingState.js';
 import { renderLoginPage } from './pages/LoginPage.js';
 import {
@@ -122,16 +122,15 @@ function renderAppShell(route, contentContainer) {
   const main = document.createElement('div');
   main.className = 'app-shell__main';
 
-  const header = createHeader(getCurrentPath());
   const content = document.createElement('main');
   content.className = 'app-shell__content';
   content.id = 'page-content';
   content.appendChild(contentContainer);
 
-  main.appendChild(header);
   main.appendChild(content);
   app.appendChild(sidebar);
   app.appendChild(overlay);
+  app.appendChild(createMobileMenuButton());
   app.appendChild(main);
 
   document.title = `${route.title} — Albas Films`;

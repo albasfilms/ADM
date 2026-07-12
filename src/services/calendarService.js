@@ -52,6 +52,7 @@ function normalizeBudgetEntries(data = {}) {
           clientName: entry.clientName || '',
           phone: entry.phone || '',
           notes: entry.notes || '',
+          amount: Number(entry.amount) || 0,
           createdAt: entry.createdAt || null,
           createdBy: entry.createdBy || null,
         })),
@@ -131,7 +132,7 @@ export async function removeBlockedDate(dateKey) {
   });
 }
 
-export async function addBudgetEntry(dateKey, { clientName, phone, notes }) {
+export async function addBudgetEntry(dateKey, { clientName, phone, notes, amount = 0 }) {
   const name = clientName?.trim();
   if (!name) {
     throw new Error('O nome do cliente é obrigatório.');
@@ -147,6 +148,7 @@ export async function addBudgetEntry(dateKey, { clientName, phone, notes }) {
       clientName: name,
       phone: phone ? onlyDigits(phone) : '',
       notes: notes?.trim() || '',
+      amount: Math.max(0, Number(amount) || 0),
       createdAt: Date.now(),
       createdBy: getAuthor(),
     };

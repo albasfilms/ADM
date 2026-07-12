@@ -1,6 +1,7 @@
 import { addBudgetEntry } from '../services/calendarService.js';
 import { createModal } from './Modal.js';
 import { getDefaultBudgetDateValue } from '../utils/budgetDisplay.js';
+import { bindCurrencyInput, parseCurrencyInput } from '../utils/currency.js';
 import { getFirestoreErrorMessage, renderIcons, showToast } from '../utils/dom.js';
 
 export function openBudgetEntryModal({ dateKey = '', onSaved } = {}) {
@@ -51,6 +52,17 @@ export function openBudgetEntryModal({ dateKey = '', onSaved } = {}) {
       />
     </div>
     <div class="form-field">
+      <label class="form-field__label" for="budget-amount">Valor</label>
+      <input
+        type="text"
+        class="form-field__input currency-input"
+        id="budget-amount"
+        name="amount"
+        placeholder="0,00"
+        inputmode="decimal"
+      />
+    </div>
+    <div class="form-field">
       <label class="form-field__label" for="budget-notes">Observação</label>
       <textarea
         class="form-field__textarea"
@@ -83,6 +95,7 @@ export function openBudgetEntryModal({ dateKey = '', onSaved } = {}) {
 
   footer.querySelector('[data-action="cancel"]').addEventListener('click', close);
   renderIcons(footer);
+  form.querySelectorAll('.currency-input').forEach(bindCurrencyInput);
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -90,6 +103,7 @@ export function openBudgetEntryModal({ dateKey = '', onSaved } = {}) {
     const selectedDateKey = form.querySelector('#budget-date')?.value || '';
     const clientName = form.querySelector('#budget-client-name')?.value || '';
     const phone = form.querySelector('#budget-phone')?.value || '';
+    const amount = parseCurrencyInput(form.querySelector('#budget-amount')?.value || '');
     const notes = form.querySelector('#budget-notes')?.value || '';
 
     if (!selectedDateKey) {
@@ -109,7 +123,7 @@ export function openBudgetEntryModal({ dateKey = '', onSaved } = {}) {
     saveBtn.classList.add('btn--loading');
 
     try {
-      const result = await addBudgetEntry(selectedDateKey, { clientName, phone, notes });
+      const result = await addBudgetEntry(selectedDateKey, { clientName, phone, notes, amount });
       showToast('Orçamento registrado com sucesso.', 'success');
       close();
       await onSaved?.(result);
