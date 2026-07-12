@@ -48,6 +48,18 @@ export const CONTRACT_STATUS_LABELS = {
   [CONTRACT_STATUS.CANCELLED]: 'Cancelado',
 };
 
+export const EVENT_TYPES = {
+  WEDDING: 'wedding',
+  CORPORATE: 'corporate',
+  EVENTS: 'events',
+};
+
+export const EVENT_TYPE_LABELS = {
+  [EVENT_TYPES.WEDDING]: 'Casamento',
+  [EVENT_TYPES.CORPORATE]: 'Corporativo',
+  [EVENT_TYPES.EVENTS]: 'Eventos',
+};
+
 export const SERVICE_TYPES = {
   STORYMAKER: 'storymaker',
   TEASER: 'teaser',

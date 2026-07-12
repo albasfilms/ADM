@@ -5,6 +5,8 @@ import {
 } from '../services/contractService.js';
 import {
   CONTRACT_STATUS,
+  EVENT_TYPES,
+  EVENT_TYPE_LABELS,
   SERVICE_TYPES,
   SERVICE_TYPE_LABELS,
   PAYMENT_METHODS,
@@ -46,6 +48,8 @@ import {
   getServicePrice,
   hasCatalogPrice,
 } from '../utils/servicePricing.js';
+import { CONTRACT_ITEM_SERVICE_ORDER } from '../utils/contractServices.js';
+import { resolveContractEventType } from '../utils/contractEventType.js';
 
 function getContractDefaults(contract) {
   if (contract) {
@@ -311,18 +315,49 @@ function buildPaymentPlan(form, data, totalCents) {
   }));
 }
 
-function serviceTypeOptions(selected = '') {
-  const catalog = CATALOG_SERVICE_ORDER.map((value) => [value, SERVICE_TYPE_LABELS[value]]);
-  const others = Object.entries(SERVICE_TYPE_LABELS).filter(
-    ([value]) => !CATALOG_SERVICE_ORDER.includes(value)
-  );
-
-  return [...catalog, ...others]
+function eventTypeOptions(selected = EVENT_TYPES.WEDDING) {
+  return Object.entries(EVENT_TYPE_LABELS)
     .map(
       ([value, label]) =>
         `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`
     )
     .join('');
+}
+
+function contractItemServiceOptions(selected = '') {
+  const extraServices = CONTRACT_ITEM_SERVICE_ORDER.filter(
+    (value) => !CATALOG_SERVICE_ORDER.includes(value)
+  );
+
+  return [...CATALOG_SERVICE_ORDER, ...extraServices]
+    .map(
+      (value) =>
+        `<option value="${value}" ${selected === value ? 'selected' : ''}>${SERVICE_TYPE_LABELS[value] || value}</option>`
+    )
+    .join('');
+}
+
+function getNextContractItem(form) {
+  const selectedTypes = getSelectedServiceTypes(form);
+  const lastType = selectedTypes[selectedTypes.length - 1];
+  const lastIndex = lastType ? CONTRACT_ITEM_SERVICE_ORDER.indexOf(lastType) : -1;
+
+  let nextType = CONTRACT_ITEM_SERVICE_ORDER[0];
+
+  if (lastIndex !== -1 && lastIndex < CONTRACT_ITEM_SERVICE_ORDER.length - 1) {
+    nextType = CONTRACT_ITEM_SERVICE_ORDER[lastIndex + 1];
+  } else {
+    const unused = CONTRACT_ITEM_SERVICE_ORDER.find((type) => !selectedTypes.includes(type));
+    if (unused) nextType = unused;
+  }
+
+  const allTypes = [...selectedTypes, nextType];
+
+  return {
+    serviceType: nextType,
+    description: SERVICE_TYPE_LABELS[nextType] || '',
+    amount: hasCatalogPrice(nextType) ? getServicePrice(nextType, allTypes) : 0,
+  };
 }
 
 function getSelectedServiceTypes(form) {
@@ -418,7 +453,7 @@ function buildItemRow(item = {}, index = 0) {
   return `
     <div class="contract-item-row" data-item-index="${index}">
       <select class="form-field__input" name="itemServiceType_${index}">
-        ${serviceTypeOptions(serviceType)}
+        ${contractItemServiceOptions(serviceType)}
       </select>
       <input class="form-field__input" name="itemDescription_${index}" placeholder="Descrição do serviço"
         value="${escapeHtml(description)}" data-auto-description="${autoDescription}" />
@@ -461,7 +496,7 @@ function getFormData(form, existingContract = null) {
   return {
     clientId: getValue('clientId'),
     title: getValue('title'),
-    serviceType: getValue('serviceType'),
+    eventType: getValue('eventType') || resolveContractEventType(existingContract || {}),
     description: getValue('description'),
     eventDate: getValue('eventDate'),
     eventTime: getValue('eventTime'),
@@ -666,6 +701,7 @@ export function openContractFormModal({
   contract = null,
   items = [],
   onSaved,
+  onCreated,
 }) {
   const isEdit = Boolean(contract);
   const defaults = getContractDefaults(contract);
@@ -704,8 +740,8 @@ export function openContractFormModal({
           <span class="form-field__error" data-error="title" hidden></span>
         </div>
         <div class="form-field">
-          <label class="form-field__label">Tipo principal</label>
-          <select class="form-field__input" name="serviceType">${serviceTypeOptions(contract?.serviceType)}</select>
+          <label class="form-field__label">Modelo do evento</label>
+          <select class="form-field__input" name="eventType">${eventTypeOptions(resolveContractEventType(contract || {}))}</select>
         </div>
         <div class="form-field form-field--full">
           <label class="form-field__label">Descrição</label>
@@ -868,7 +904,8 @@ export function openContractFormModal({
 
   form.querySelector('#add-item-btn')?.addEventListener('click', () => {
     const container = form.querySelector('#contract-items');
-    container.insertAdjacentHTML('beforeend', buildItemRow({}, itemIndex));
+    const nextItem = getNextContractItem(form);
+    container.insertAdjacentHTML('beforeend', buildItemRow(nextItem, itemIndex));
     itemIndex += 1;
     renderIcons(container);
     const newRow = container.lastElementChild;
@@ -952,8 +989,9 @@ export function openContractFormModal({
       installments: plan,
       totalCents,
       onConfirm: async (confirmedPlan) => {
-        await createContract(data, itemsCollected, confirmedPlan, client);
+        const contractId = await createContract(data, itemsCollected, confirmedPlan, client);
         showToast('Contrato criado com sucesso.', 'success');
+        onCreated?.(contractId);
         onSaved?.();
         close();
       },
@@ -989,8 +1027,12 @@ export function openContractFormModal({
       } else {
         const totalCents = sumCents(itemsCollected.map((i) => i.amount));
         const plan = buildPaymentPlan(form, data, totalCents);
-        await createContract(data, itemsCollected, plan, client);
+        const contractId = await createContract(data, itemsCollected, plan, client);
         showToast('Contrato criado com sucesso.', 'success');
+        close();
+        onSaved?.();
+        onCreated?.(contractId);
+        return;
       }
       close();
       onSaved?.();

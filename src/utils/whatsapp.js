@@ -1,6 +1,7 @@
 import { formatCurrency } from './currency.js';
 import { formatDate } from './dates.js';
-import { SERVICE_TYPE_LABELS } from './constants.js';
+import { EVENT_TYPE_LABELS } from './constants.js';
+import { resolveContractEventType } from './contractEventType.js';
 import {
   getInstallmentRemaining,
   isDueToday,
@@ -59,7 +60,7 @@ Um abraço!`;
 
 export function buildWhatsAppSummary({ client, contract, installments }) {
   const pending = (contract.totalAmount || 0) - (contract.receivedAmount || 0);
-  const serviceLabel = SERVICE_TYPE_LABELS[contract.serviceType] || contract.title;
+  const serviceLabel = EVENT_TYPE_LABELS[resolveContractEventType(contract)] || contract.title;
 
   const upcoming = installments
     .filter((inst) => getInstallmentRemaining(inst) > 0)

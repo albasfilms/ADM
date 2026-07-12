@@ -2,7 +2,7 @@ import { getReportData, getReportAnalytics, exportToCSV, contractsToCSV, payment
 import { getActiveClients } from '../services/contractService.js';
 import {
   CONTRACT_STATUS_LABELS,
-  SERVICE_TYPE_LABELS,
+  EVENT_TYPE_LABELS,
   PAYMENT_METHOD_LABELS,
 } from '../utils/constants.js';
 import { formatCurrency } from '../utils/currency.js';
@@ -16,7 +16,7 @@ let filters = {
   dateFrom: '',
   dateTo: '',
   clientId: 'all',
-  serviceType: 'all',
+  eventType: 'all',
   status: 'all',
   paymentMethod: 'all',
 };
@@ -65,8 +65,8 @@ async function loadReport(container) {
       .map(([k, v]) => `<tr><td>${PAYMENT_METHOD_LABELS[k] || k}</td><td>${formatCurrency(v)}</td></tr>`)
       .join('');
 
-    const serviceRows = Object.entries(data.byService)
-      .map(([k, v]) => `<tr><td>${SERVICE_TYPE_LABELS[k] || k}</td><td>${formatCurrency(v)}</td></tr>`)
+    const eventRows = Object.entries(data.byEventType)
+      .map(([k, v]) => `<tr><td>${EVENT_TYPE_LABELS[k] || k}</td><td>${formatCurrency(v)}</td></tr>`)
       .join('');
 
     breakdownEl.innerHTML = `
@@ -74,8 +74,8 @@ async function loadReport(container) {
         <div class="card"><div class="card__header"><h3 class="card__title">Por forma de pagamento</h3></div>
           <div class="card__body"><table class="data-table"><tbody>${methodRows || '<tr><td colspan="2" class="text-muted">Sem dados</td></tr>'}</tbody></table></div>
         </div>
-        <div class="card"><div class="card__header"><h3 class="card__title">Por tipo de serviço</h3></div>
-          <div class="card__body"><table class="data-table"><tbody>${serviceRows || '<tr><td colspan="2" class="text-muted">Sem dados</td></tr>'}</tbody></table></div>
+        <div class="card"><div class="card__header"><h3 class="card__title">Por modelo de evento</h3></div>
+          <div class="card__body"><table class="data-table"><tbody>${eventRows || '<tr><td colspan="2" class="text-muted">Sem dados</td></tr>'}</tbody></table></div>
         </div>
       </div>
     `;
@@ -233,9 +233,9 @@ export async function renderReportsPage(container) {
             <option value="all">Todos os clientes</option>
             ${clients.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}
           </select>
-          <select class="form-field__input toolbar__filter" id="filter-service">
-            <option value="all">Todos os serviços</option>
-            ${Object.entries(SERVICE_TYPE_LABELS).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
+          <select class="form-field__input toolbar__filter" id="filter-event-type">
+            <option value="all">Todos os modelos</option>
+            ${Object.entries(EVENT_TYPE_LABELS).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
           </select>
           <select class="form-field__input toolbar__filter" id="filter-status">
             <option value="all">Todos os status</option>
@@ -268,7 +268,7 @@ export async function renderReportsPage(container) {
       dateFrom: container.querySelector('#filter-from').value,
       dateTo: container.querySelector('#filter-to').value,
       clientId: container.querySelector('#filter-client').value,
-      serviceType: container.querySelector('#filter-service').value,
+      eventType: container.querySelector('#filter-event-type').value,
       status: container.querySelector('#filter-status').value,
       paymentMethod: container.querySelector('#filter-payment').value,
     };

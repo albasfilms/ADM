@@ -7,6 +7,11 @@ import {
   deleteContract,
 } from '../services/contractService.js';
 import { openContractFormModal } from './contractForm.js';
+import {
+  openContractDocumentModal,
+  openContractTemplatesModal,
+  promptGenerateContractAfterCreate,
+} from './ContractDocumentModal.js';
 import { createEmptyState } from '../components/EmptyState.js';
 import { createSkeletonRows } from '../components/Skeleton.js';
 import { createContractStatusBadge } from '../components/StatusBadge.js';
@@ -23,6 +28,7 @@ import { getInstallmentRemaining } from '../utils/installmentStatus.js';
 import {
   CONTRACT_STATUS,
   CONTRACT_STATUS_LABELS,
+  EVENT_TYPE_LABELS,
   SERVICE_TYPE_LABELS,
   INSTALLMENT_STATUS,
   INSTALLMENT_STATUS_LABELS,
@@ -34,6 +40,7 @@ import { escapeHtml, renderIcons, showToast } from '../utils/dom.js';
 import { isAdmin, canDeleteContracts } from '../utils/permissions.js';
 import { getCurrentUser } from '../appState.js';
 import { formatDaysUntilEvent, getEventTimestamp } from '../utils/eventCountdown.js';
+import { resolveContractEventType } from '../utils/contractEventType.js';
 
 let listState = {
   search: '',
@@ -55,7 +62,7 @@ function formatEventLocation(contract) {
 }
 
 function buildContractCardHTML(contract) {
-  const serviceLabel = SERVICE_TYPE_LABELS[contract.serviceType] || 'Serviço';
+  const eventLabel = EVENT_TYPE_LABELS[resolveContractEventType(contract)] || 'Evento';
   const location = formatEventLocation(contract);
   const eventTs = getEventTimestamp(contract);
   const countdown = eventTs ? formatDaysUntilEvent(eventTs) : null;
@@ -73,7 +80,7 @@ function buildContractCardHTML(contract) {
         </div>
         <div class="contract-card__status" data-status="${contract.id}"></div>
       </div>
-      <span class="contract-card__service">${escapeHtml(serviceLabel)}</span>
+      <span class="contract-card__service">${escapeHtml(eventLabel)}</span>
       ${
         countdown
           ? `
@@ -217,7 +224,13 @@ async function openNewContractModal(onSaved) {
       showToast('Cadastre um cliente ativo antes de criar contratos.', 'error');
       return;
     }
-    openContractFormModal({ clients, onSaved });
+    openContractFormModal({
+      clients,
+      onSaved,
+      onCreated: (contractId) => {
+        promptGenerateContractAfterCreate(contractId);
+      },
+    });
   } catch (error) {
     console.error('[Contracts] Erro ao carregar clientes:', error);
     const message =
@@ -299,6 +312,9 @@ async function renderContractDetail(container, contractId) {
 
     const actions = container.querySelector('#detail-actions');
     actions.innerHTML = `
+      <button type="button" class="btn btn--secondary" id="generate-contract-btn">
+        <i data-lucide="file-text" aria-hidden="true"></i> Gerar contrato
+      </button>
       <button type="button" class="btn btn--secondary" id="whatsapp-btn">
         <i data-lucide="message-circle" aria-hidden="true"></i> WhatsApp
       </button>
@@ -344,6 +360,7 @@ async function renderContractDetail(container, contractId) {
           <div class="card__body">
             <dl class="detail-list">
               <div class="detail-list__item"><dt>Cliente</dt><dd><a href="#/clientes/${contract.clientId}" class="link">${escapeHtml(contract.clientName)}</a></dd></div>
+              <div class="detail-list__item"><dt>Modelo do evento</dt><dd>${EVENT_TYPE_LABELS[resolveContractEventType(contract)] || '—'}</dd></div>
               <div class="detail-list__item"><dt>Data do evento</dt><dd>${formatDate(contract.eventDate)} ${contract.eventTime || ''}</dd></div>
               <div class="detail-list__item"><dt>Local</dt><dd>${contract.eventLocation || '—'}</dd></div>
               <div class="detail-list__item"><dt>Cidade</dt><dd>${contract.city ? `${contract.city}${contract.state ? ` / ${contract.state}` : ''}` : '—'}</dd></div>
@@ -490,6 +507,10 @@ async function renderContractDetail(container, contractId) {
     renderIcons(container);
 
     const summaryText = buildWhatsAppSummary({ client, contract, installments });
+
+    container.querySelector('#generate-contract-btn')?.addEventListener('click', () => {
+      openContractDocumentModal({ contractId });
+    });
 
     container.querySelector('#whatsapp-btn')?.addEventListener('click', () => {
       if (client?.whatsapp) {
@@ -679,9 +700,14 @@ function renderContractsList(container) {
         <h2 class="page-header__title">Contratos</h2>
         <p class="page-header__subtitle">Gerencie contratos, serviços e parcelas</p>
       </div>
-      <button type="button" class="btn btn--primary" id="new-contract-btn">
-        <i data-lucide="plus" aria-hidden="true"></i> Novo contrato
-      </button>
+      <div class="page-header__actions">
+        <button type="button" class="btn btn--secondary" id="contract-templates-btn">
+          <i data-lucide="file-cog" aria-hidden="true"></i> Modelos
+        </button>
+        <button type="button" class="btn btn--primary" id="new-contract-btn">
+          <i data-lucide="plus" aria-hidden="true"></i> Novo contrato
+        </button>
+      </div>
     </div>
 
     <div class="card">
@@ -719,6 +745,10 @@ function renderContractsList(container) {
   const listEl = container.querySelector('#contracts-list');
   const paginationEl = container.querySelector('#contracts-pagination');
   let searchTimeout;
+
+  container.querySelector('#contract-templates-btn').addEventListener('click', () => {
+    openContractTemplatesModal();
+  });
 
   container.querySelector('#new-contract-btn').addEventListener('click', () =>
     openNewContractModal(() => {

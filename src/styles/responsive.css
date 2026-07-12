@@ -378,6 +378,14 @@
     gap: var(--space-2);
   }
 
+  .dashboard-alerts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .due-cards-grid {
+    grid-template-columns: 1fr;
+  }
+
   .chart-container {
     height: 200px;
     margin: 0;
@@ -469,7 +477,8 @@
     margin-bottom: 0;
   }
 
-  .modal--lg {
+  .modal--lg,
+  .modal--xl {
     max-width: 100%;
   }
 

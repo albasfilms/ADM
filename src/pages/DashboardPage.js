@@ -1,13 +1,14 @@
 import { getCurrentUser } from '../appState.js';
-import { renderIcons } from '../utils/dom.js';
+import { renderIcons, showToast, escapeHtml } from '../utils/dom.js';
 import { getDashboardData } from '../services/dashboardService.js';
+import { getClientById } from '../services/clientService.js';
+import { buildInstallmentCollectionMessage, openWhatsApp } from '../utils/whatsapp.js';
 import { createSummaryCard } from '../components/SummaryCard.js';
 import { createSkeletonCards } from '../components/Skeleton.js';
 import { createModal } from '../components/Modal.js';
 import { formatCurrency } from '../utils/currency.js';
 import { formatDate } from '../utils/dates.js';
 import { getInstallmentRemaining, toJsDate } from '../utils/installmentStatus.js';
-import { escapeHtml } from '../utils/dom.js';
 import { CONTRACT_STATUS_LABELS } from '../utils/constants.js';
 import {
   formatCountdown,
@@ -189,9 +190,37 @@ function filterDueByRange(dueInstallments, range) {
   });
 }
 
-function renderInstallmentRows(items, emptyText) {
+function renderInstallmentRows(items, emptyText, { showWhatsApp = false, asCards = false } = {}) {
   if (!items.length) {
     return `<p class="text-muted">${emptyText}</p>`;
+  }
+
+  if (asCards) {
+    return `<div class="due-cards-grid">${items
+      .map(({ contract, installment }) => {
+        const installmentLabel = installment.number === 0 ? 'Entrada' : `Parcela ${installment.number}`;
+        return `
+      <article class="due-card">
+        <div class="due-card__header">
+          <a href="#/contratos/${contract.id}" class="due-card__client link">${escapeHtml(contract.clientName)}</a>
+          ${
+            showWhatsApp
+              ? `<button type="button" class="btn btn--ghost btn--sm installment-whatsapp-btn" data-whatsapp-collect data-contract-id="${contract.id}" data-installment-id="${installment.id}" title="Enviar cobrança por WhatsApp" aria-label="Enviar cobrança por WhatsApp">
+            <i data-lucide="message-circle" aria-hidden="true"></i>
+          </button>`
+              : ''
+          }
+        </div>
+        <p class="due-card__title">${escapeHtml(contract.title)}</p>
+        <span class="due-card__installment">${installmentLabel}</span>
+        <div class="due-card__footer">
+          <span class="due-card__date">${formatDate(installment.dueDate)}</span>
+          <strong class="due-card__amount">${formatCurrency(getInstallmentRemaining(installment))}</strong>
+        </div>
+      </article>
+    `;
+      })
+      .join('')}</div>`;
   }
 
   return `<ul class="dashboard-list">${items
@@ -202,7 +231,16 @@ function renderInstallmentRows(items, emptyText) {
         <strong>${escapeHtml(contract.clientName)}</strong> — ${escapeHtml(contract.title)}
         <span class="text-muted"> · ${installment.number === 0 ? 'Entrada' : `Parcela ${installment.number}`}</span>
       </a>
-      <span>${formatDate(installment.dueDate)} · ${formatCurrency(getInstallmentRemaining(installment))}</span>
+      <div class="dashboard-list__actions">
+        <span>${formatDate(installment.dueDate)} · ${formatCurrency(getInstallmentRemaining(installment))}</span>
+        ${
+          showWhatsApp
+            ? `<button type="button" class="btn btn--ghost btn--sm installment-whatsapp-btn" data-whatsapp-collect data-contract-id="${contract.id}" data-installment-id="${installment.id}" title="Enviar cobrança por WhatsApp" aria-label="Enviar cobrança por WhatsApp">
+          <i data-lucide="message-circle" aria-hidden="true"></i>
+        </button>`
+            : ''
+        }
+      </div>
     </li>
   `
     )
@@ -255,9 +293,6 @@ function openDetailModal(title, content) {
   createModal({ title, content, size: 'lg' });
 }
 
-function formatAlertCount(count, singular, plural) {
-  return count === 1 ? `1 ${singular}` : `${count} ${plural}`;
-}
 
 function renderAlertsSummary(container, alerts) {
   const items = [];
@@ -268,7 +303,8 @@ function renderAlertsSummary(container, alerts) {
       type: 'danger',
       key: 'overdue',
       icon: 'circle-alert',
-      text: formatAlertCount(n, 'parcela atrasada', 'parcelas atrasadas'),
+      count: n,
+      label: n === 1 ? 'parcela atrasada' : 'parcelas atrasadas',
     });
   }
   if (alerts.dueToday.length) {
@@ -277,7 +313,8 @@ function renderAlertsSummary(container, alerts) {
       type: 'warning',
       key: 'dueToday',
       icon: 'clock',
-      text: formatAlertCount(n, 'parcela vence hoje', 'parcelas vencem hoje'),
+      count: n,
+      label: n === 1 ? 'parcela vence hoje' : 'parcelas vencem hoje',
     });
   }
   if (alerts.dueWeek.length) {
@@ -286,7 +323,8 @@ function renderAlertsSummary(container, alerts) {
       type: 'info',
       key: 'dueWeek',
       icon: 'calendar-clock',
-      text: formatAlertCount(n, 'parcela vence nos próximos 7 dias', 'parcelas vencem nos próximos 7 dias'),
+      count: n,
+      label: n === 1 ? 'parcela vence em 7 dias' : 'parcelas vencem em 7 dias',
     });
   }
   if (alerts.awaitingEntry.length) {
@@ -295,7 +333,8 @@ function renderAlertsSummary(container, alerts) {
       type: 'warning',
       key: 'awaitingEntry',
       icon: 'wallet',
-      text: formatAlertCount(n, 'contrato aguardando entrada', 'contratos aguardando entrada'),
+      count: n,
+      label: n === 1 ? 'contrato aguardando entrada' : 'contratos aguardando entrada',
     });
   }
   if (alerts.eventsSoon.length) {
@@ -304,7 +343,8 @@ function renderAlertsSummary(container, alerts) {
       type: 'info',
       key: 'eventsSoon',
       icon: 'calendar-heart',
-      text: formatAlertCount(n, 'evento nos próximos 7 dias', 'eventos nos próximos 7 dias'),
+      count: n,
+      label: n === 1 ? 'evento em 7 dias' : 'eventos em 7 dias',
     });
   }
 
@@ -313,17 +353,23 @@ function renderAlertsSummary(container, alerts) {
     return;
   }
 
-  container.innerHTML = items
-    .map(
-      (a) => `
-    <div class="alert alert--${a.type} alert--clickable" data-alert="${a.key}" role="button" tabindex="0">
-      <i data-lucide="${a.icon}" aria-hidden="true"></i>
-      <span>${a.text}</span>
-      <i data-lucide="chevron-right" class="alert__chevron" aria-hidden="true"></i>
+  container.innerHTML = `
+    <div class="dashboard-alerts-grid">
+      ${items
+        .map(
+          (a) => `
+        <button type="button" class="alert-card alert-card--${a.type}" data-alert="${a.key}" aria-label="${a.count} ${a.label}">
+          <span class="alert-card__icon-wrap" aria-hidden="true">
+            <i data-lucide="${a.icon}"></i>
+          </span>
+          <span class="alert-card__count">${a.count}</span>
+          <span class="alert-card__label">${a.label}</span>
+        </button>
+      `
+        )
+        .join('')}
     </div>
-  `
-    )
-    .join('');
+  `;
   renderIcons(container);
 }
 
@@ -489,7 +535,43 @@ function renderDueByMonth(container, data, mode, customMonth) {
   const items = filterDueByRange(data.dueInstallments, range);
 
   labelEl.textContent = range.label;
-  listEl.innerHTML = renderInstallmentRows(items, 'Nenhum vencimento neste período.');
+  listEl.innerHTML = renderInstallmentRows(items, 'Nenhum vencimento neste período.', {
+    showWhatsApp: true,
+    asCards: true,
+  });
+  renderIcons(listEl);
+}
+
+function bindDueMonthWhatsApp(container) {
+  if (container.dataset.dueMonthWhatsappBound) return;
+  container.dataset.dueMonthWhatsappBound = '1';
+
+  container.addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-whatsapp-collect]');
+    if (!btn || !container.querySelector('#due-by-month-list')?.contains(btn)) return;
+
+    const data = container._dashboardData;
+    if (!data) return;
+
+    const item = data.dueInstallments.find(
+      ({ contract, installment }) =>
+        contract.id === btn.dataset.contractId && installment.id === btn.dataset.installmentId
+    );
+    if (!item) return;
+
+    const client = await getClientById(item.contract.clientId);
+    if (!client?.whatsapp) {
+      showToast('Cliente sem WhatsApp cadastrado.', 'error');
+      return;
+    }
+
+    const message = buildInstallmentCollectionMessage({
+      client,
+      contract: item.contract,
+      installment: item.installment,
+    });
+    openWhatsApp(client.whatsapp, message);
+  });
 }
 
 export async function renderDashboardPage(container) {
@@ -644,6 +726,8 @@ export async function renderDashboardPage(container) {
     startEventCountdowns(container);
     renderIcons(container.querySelector('#dashboard-events'));
 
+    container._dashboardData = data;
+    bindDueMonthWhatsApp(container);
     renderDueByMonth(container, data, monthFilterMode, customMonth);
 
     container.querySelectorAll('[data-alert]').forEach((alertEl) => {

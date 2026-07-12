@@ -3,9 +3,10 @@ import { db } from '../firebase/config.js';
 import {
   CLIENT_STATUS,
   CONTRACT_STATUS,
-  SERVICE_TYPE_LABELS,
+  EVENT_TYPE_LABELS,
   PAYMENT_METHOD_LABELS,
 } from '../utils/constants.js';
+import { resolveContractEventType } from '../utils/contractEventType.js';
 import { formatCurrency } from '../utils/currency.js';
 import { formatDate } from '../utils/dates.js';
 import { getContractInstallments } from './contractService.js';
@@ -28,8 +29,8 @@ export async function getReportData(filters = {}) {
     contracts = contracts.filter((c) => c.clientId === filters.clientId);
   }
 
-  if (filters.serviceType && filters.serviceType !== 'all') {
-    contracts = contracts.filter((c) => c.serviceType === filters.serviceType);
+  if (filters.eventType && filters.eventType !== 'all') {
+    contracts = contracts.filter((c) => resolveContractEventType(c) === filters.eventType);
   }
 
   if (filters.dateFrom) {
@@ -87,10 +88,10 @@ export async function getReportData(filters = {}) {
     byPaymentMethod[key] = (byPaymentMethod[key] || 0) + (p.amount || 0);
   });
 
-  const byService = {};
+  const byEventType = {};
   nonCancelled.forEach((c) => {
-    const key = c.serviceType || 'other';
-    byService[key] = (byService[key] || 0) + (c.receivedAmount || 0);
+    const key = resolveContractEventType(c);
+    byEventType[key] = (byEventType[key] || 0) + (c.receivedAmount || 0);
   });
 
   const clientIds = new Set(nonCancelled.map((c) => c.clientId));
@@ -106,7 +107,7 @@ export async function getReportData(filters = {}) {
       clientCount: clientIds.size,
     },
     byPaymentMethod,
-    byService,
+    byEventType,
     contracts: nonCancelled,
     payments,
   };
@@ -198,7 +199,7 @@ export function contractsToCSV(contracts) {
   return contracts.map((c) => ({
     Cliente: c.clientName,
     Contrato: c.title,
-    Serviço: SERVICE_TYPE_LABELS[c.serviceType] || c.serviceType,
+    Modelo: EVENT_TYPE_LABELS[resolveContractEventType(c)] || resolveContractEventType(c),
     Status: c.status,
     'Valor total': formatCurrency(c.totalAmount),
     Recebido: formatCurrency(c.receivedAmount),
