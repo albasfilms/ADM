@@ -24,6 +24,7 @@ import {
   formatPhone,
   formatDocument,
 } from '../utils/validators.js';
+import { parseQuickClientText } from '../utils/parseQuickClient.js';
 import { formatDate, formatDateTime } from '../utils/dates.js';
 import { escapeHtml, renderIcons, showToast } from '../utils/dom.js';
 let listState = {
@@ -50,6 +51,76 @@ function getClientIdFromPath() {
   return match ? match[1] : null;
 }
 
+function applyQuickClientParse(form, parsed) {
+  const personTypeSelect = form.querySelector('#client-personType');
+  const documentInput = form.querySelector('#client-document');
+  const docLabelEl = form.querySelector('[data-doc-label]');
+
+  if (parsed.name) form.querySelector('#client-name').value = parsed.name;
+
+  if (parsed.personType) {
+    personTypeSelect.value = parsed.personType;
+    docLabelEl.textContent = parsed.personType === PERSON_TYPES.COMPANY ? 'CNPJ' : 'CPF';
+    documentInput.placeholder =
+      parsed.personType === PERSON_TYPES.COMPANY ? '00.000.000/0000-00' : '000.000.000-00';
+  }
+
+  if (parsed.document) {
+    documentInput.value = formatDocument(parsed.document, personTypeSelect.value);
+  }
+
+  if (parsed.phone) {
+    form.querySelector('#client-phone').value = formatPhone(parsed.phone);
+  }
+
+  if (parsed.whatsapp) {
+    form.querySelector('#client-whatsapp').value = formatPhone(parsed.whatsapp);
+  }
+
+  if (parsed.email) form.querySelector('#client-email').value = parsed.email;
+  if (parsed.instagram) form.querySelector('#client-instagram').value = parsed.instagram;
+  if (parsed.address) form.querySelector('#client-address').value = parsed.address;
+  if (parsed.city) form.querySelector('#client-city').value = parsed.city;
+
+  if (parsed.state) {
+    const stateSelect = form.querySelector('#client-state');
+    const option = [...stateSelect.options].find((opt) => opt.value === parsed.state);
+    if (option) stateSelect.value = parsed.state;
+  }
+
+  if (parsed.notes) form.querySelector('#client-notes').value = parsed.notes;
+}
+
+function bindQuickClientRegister(form) {
+  const quickInput = form.querySelector('#client-quick-register');
+  const parseBtn = form.querySelector('#client-quick-parse-btn');
+  if (!quickInput || !parseBtn) return;
+
+  const runParse = () => {
+    const text = quickInput.value.trim();
+    if (!text) {
+      showToast('Cole as informações do cliente na caixa de cadastro rápido.', 'info');
+      return;
+    }
+
+    const parsed = parseQuickClientText(text);
+    const filledCount = Object.values(parsed).filter((value) => Boolean(value)).length;
+
+    if (!filledCount) {
+      showToast('Não foi possível identificar dados no texto colado.', 'warning');
+      return;
+    }
+
+    applyQuickClientParse(form, parsed);
+    showToast('Campos preenchidos automaticamente.', 'success');
+  };
+
+  parseBtn.addEventListener('click', runParse);
+  quickInput.addEventListener('paste', () => {
+    setTimeout(runParse, 0);
+  });
+}
+
 function buildClientForm(client = null) {
   const form = document.createElement('form');
   form.className = 'client-form';
@@ -59,6 +130,27 @@ function buildClientForm(client = null) {
   const docLabel = personType === PERSON_TYPES.COMPANY ? 'CNPJ' : 'CPF';
 
   form.innerHTML = `
+    ${
+      client
+        ? ''
+        : `
+    <div class="quick-register form-field form-field--full">
+      <label class="form-field__label" for="client-quick-register">Cadastro rápido</label>
+      <textarea
+        class="form-field__input form-field__textarea quick-register__input"
+        id="client-quick-register"
+        rows="4"
+        placeholder="Cole as informações do cliente. Funciona com ou sem rótulos — ex: Maria e João na primeira linha"
+      ></textarea>
+      <div class="quick-register__actions">
+        <button type="button" class="btn btn--secondary btn--sm" id="client-quick-parse-btn">
+          Preencher automaticamente
+        </button>
+        <span class="quick-register__hint text-muted">Funciona com texto livre: a primeira linha vira o nome se não tiver rótulo.</span>
+      </div>
+    </div>
+    `
+    }
     <div class="form-grid">
       <div class="form-field form-field--full">
         <label class="form-field__label" for="client-name">Nome completo *</label>
@@ -181,6 +273,10 @@ function buildClientForm(client = null) {
   whatsappInput.addEventListener('input', () => {
     whatsappInput.value = formatPhone(whatsappInput.value);
   });
+
+  if (!client) {
+    bindQuickClientRegister(form);
+  }
 
   return form;
 }

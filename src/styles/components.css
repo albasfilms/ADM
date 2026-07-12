@@ -562,7 +562,25 @@
 
 .form-field__textarea {
   resize: vertical;
-  min-height: 80px;
+  min-height: 88px;
+}
+
+.quick-register {
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--color-gray-200);
+}
+
+.quick-register__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.quick-register__hint {
+  font-size: var(--font-size-sm);
 }
 
 /* Toolbar */
@@ -954,6 +972,39 @@
   align-items: center;
   gap: var(--space-2);
   margin-bottom: var(--space-4);
+}
+
+.month-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+@media (max-width: 480px) {
+  .month-picker-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.month-picker-btn.is-active {
+  color: var(--color-white);
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.month-picker-btn.is-active:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+.expected-month-summary {
+  margin: var(--space-4) 0 var(--space-5);
+  font-size: var(--font-size-base);
+}
+
+.expected-month-summary__value {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
 }
 
 .dashboard-filter-btn.is-active {
@@ -1367,6 +1418,24 @@
   font-size: var(--font-size-xs);
 }
 
+.data-table__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.installment-whatsapp-btn {
+  color: #128c7e;
+}
+
+.installment-whatsapp-btn:hover:not(:disabled) {
+  color: #0e6f64;
+  background: rgba(18, 140, 126, 0.08);
+}
+
 .report-summary,
 .report-breakdown {
   margin-bottom: var(--space-5);
@@ -1503,24 +1572,18 @@
   color: var(--color-gray-400);
 }
 
-.contract-card__signed-link {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  align-self: flex-start;
-  font-size: var(--font-size-xs);
-  font-weight: 500;
-  text-decoration: none;
+.contract-card__actions {
+  display: flex;
+  margin-top: var(--space-1);
 }
 
-.contract-card__signed-link svg {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
+.contract-card__link-btn {
+  width: 100%;
+  justify-content: center;
 }
 
-.contract-card__signed-link:hover {
-  text-decoration: underline;
+.contract-card__link-btn--empty {
+  opacity: 0.75;
 }
 
 .contract-card__footer {

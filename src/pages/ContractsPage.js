@@ -18,7 +18,7 @@ import {
   deletePayment,
 } from '../services/paymentService.js';
 import { getClientById } from '../services/clientService.js';
-import { buildWhatsAppSummary, copyToClipboard, openWhatsApp } from '../utils/whatsapp.js';
+import { buildWhatsAppSummary, buildInstallmentCollectionMessage, copyToClipboard, openWhatsApp } from '../utils/whatsapp.js';
 import { getInstallmentRemaining } from '../utils/installmentStatus.js';
 import {
   CONTRACT_STATUS,
@@ -99,16 +99,17 @@ function buildContractCardHTML(contract) {
           <span>${escapeHtml(location)}</span>
         </li>
       </ul>
-      ${
-        contract.contractLink
-          ? `
-      <a href="${escapeHtml(contract.contractLink)}" class="contract-card__signed-link link" target="_blank" rel="noopener noreferrer">
-        <i data-lucide="file-signature" aria-hidden="true"></i>
-        Acessar contrato assinado
-      </a>
-      `
-          : ''
-      }
+      <div class="contract-card__actions">
+        <button
+          type="button"
+          class="btn btn--secondary btn--sm contract-card__link-btn${contract.contractLink ? '' : ' contract-card__link-btn--empty'}"
+          data-contract-link="${escapeHtml(contract.contractLink || '')}"
+          aria-label="Link do contrato ${escapeHtml(contract.title)}"
+        >
+          <i data-lucide="external-link" aria-hidden="true"></i>
+          Link do contrato
+        </button>
+      </div>
       <div class="contract-card__footer">
         <div class="contract-card__amount">
           <span class="contract-card__label">Total</span>
@@ -148,15 +149,25 @@ function bindContractCards(container) {
   container.querySelectorAll('.contract-card[data-contract-id]').forEach((card) => {
     const open = () => navigateTo(`/contratos/${card.dataset.contractId}`);
     card.addEventListener('click', (event) => {
-      if (event.target.closest('.contract-card__signed-link')) return;
+      if (event.target.closest('.contract-card__link-btn')) return;
       open();
     });
     card.addEventListener('keydown', (event) => {
-      if (event.target.closest('.contract-card__signed-link')) return;
+      if (event.target.closest('.contract-card__link-btn')) return;
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         open();
       }
+    });
+
+    card.querySelector('.contract-card__link-btn')?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const link = event.currentTarget.dataset.contractLink?.trim();
+      if (link) {
+        window.open(link, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      showToast('Este contrato ainda não tem link cadastrado. Edite o contrato para adicionar.', 'info');
     });
   });
 }
@@ -404,10 +415,16 @@ async function renderContractDetail(container, contractId) {
                       <td>${formatCurrency(inst.paidAmount || 0)}</td>
                       <td>${formatDate(inst.dueDate)}</td>
                       <td>${INSTALLMENT_STATUS_LABELS[inst.status] || inst.status}</td>
-                      <td>
+                      <td class="data-table__actions">
                         ${
                           canPay
-                            ? `<button type="button" class="btn btn--ghost btn--sm" data-pay="${inst.id}">Pagar</button>`
+                            ? `
+                          <button type="button" class="btn btn--ghost btn--sm" data-pay="${inst.id}">Pagar</button>
+                          <button type="button" class="btn btn--ghost btn--sm installment-whatsapp-btn" data-whatsapp-collect="${inst.id}" title="Enviar cobrança por WhatsApp">
+                            <i data-lucide="message-circle" aria-hidden="true"></i>
+                            WhatsApp
+                          </button>
+                        `
                             : ''
                         }
                       </td>
@@ -495,6 +512,18 @@ async function renderContractDetail(container, contractId) {
           installment: inst,
           onSaved: () => renderContractDetail(container, contractId),
         });
+      });
+    });
+
+    content.querySelectorAll('[data-whatsapp-collect]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const inst = installments.find((i) => i.id === btn.dataset.whatsappCollect);
+        if (!client?.whatsapp) {
+          showToast('Cliente sem WhatsApp cadastrado.', 'error');
+          return;
+        }
+        const message = buildInstallmentCollectionMessage({ client, contract, installment: inst });
+        openWhatsApp(client.whatsapp, message);
       });
     });
 

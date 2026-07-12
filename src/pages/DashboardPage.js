@@ -133,13 +133,52 @@ function getMonthRangeFromFilter(mode, customMonth) {
     };
   }
 
-  const [year, month] = customMonth.split('-').map(Number);
+  return getMonthRange(customMonth);
+}
+
+function getMonthRange(monthValue) {
+  const [year, month] = monthValue.split('-').map(Number);
   const date = new Date(year, month - 1, 1);
   return {
     start: date,
     end: new Date(year, month, 0, 23, 59, 59, 999),
     label: date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
   };
+}
+
+function getMonthOptions(count = 12, startDate = new Date()) {
+  const options = [];
+  const date = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+
+  for (let i = 0; i < count; i += 1) {
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const value = `${year}-${String(month).padStart(2, '0')}`;
+    const monthName = date
+      .toLocaleDateString('pt-BR', { month: 'short' })
+      .replace('.', '')
+      .trim();
+    const label = `${monthName.charAt(0).toUpperCase() + monthName.slice(1)}/${String(year).slice(-2)}`;
+
+    options.push({ value, label });
+    date.setMonth(date.getMonth() + 1);
+  }
+
+  return options;
+}
+
+function renderMonthPickerGrid(selectedMonth, startDate = new Date()) {
+  return getMonthOptions(12, startDate)
+    .map(
+      ({ value, label }) => `
+    <button
+      type="button"
+      class="btn btn--secondary btn--sm month-picker-btn${value === selectedMonth ? ' is-active' : ''}"
+      data-month-pick="${value}"
+    >${label}</button>
+  `
+    )
+    .join('');
 }
 
 function filterDueByRange(dueInstallments, range) {
@@ -216,23 +255,57 @@ function openDetailModal(title, content) {
   createModal({ title, content, size: 'lg' });
 }
 
+function formatAlertCount(count, singular, plural) {
+  return count === 1 ? `1 ${singular}` : `${count} ${plural}`;
+}
+
 function renderAlertsSummary(container, alerts) {
   const items = [];
 
   if (alerts.overdue.length) {
-    items.push({ type: 'danger', key: 'overdue', text: `${alerts.overdue.length} parcela(s) atrasada(s)` });
+    const n = alerts.overdue.length;
+    items.push({
+      type: 'danger',
+      key: 'overdue',
+      icon: 'circle-alert',
+      text: formatAlertCount(n, 'parcela atrasada', 'parcelas atrasadas'),
+    });
   }
   if (alerts.dueToday.length) {
-    items.push({ type: 'warning', key: 'dueToday', text: `${alerts.dueToday.length} parcela(s) vence(m) hoje` });
+    const n = alerts.dueToday.length;
+    items.push({
+      type: 'warning',
+      key: 'dueToday',
+      icon: 'clock',
+      text: formatAlertCount(n, 'parcela vence hoje', 'parcelas vencem hoje'),
+    });
   }
   if (alerts.dueWeek.length) {
-    items.push({ type: 'info', key: 'dueWeek', text: `${alerts.dueWeek.length} parcela(s) vence(m) nos próximos 7 dias` });
+    const n = alerts.dueWeek.length;
+    items.push({
+      type: 'info',
+      key: 'dueWeek',
+      icon: 'calendar-clock',
+      text: formatAlertCount(n, 'parcela vence nos próximos 7 dias', 'parcelas vencem nos próximos 7 dias'),
+    });
   }
   if (alerts.awaitingEntry.length) {
-    items.push({ type: 'warning', key: 'awaitingEntry', text: `${alerts.awaitingEntry.length} contrato(s) aguardando entrada` });
+    const n = alerts.awaitingEntry.length;
+    items.push({
+      type: 'warning',
+      key: 'awaitingEntry',
+      icon: 'wallet',
+      text: formatAlertCount(n, 'contrato aguardando entrada', 'contratos aguardando entrada'),
+    });
   }
   if (alerts.eventsSoon.length) {
-    items.push({ type: 'info', key: 'eventsSoon', text: `${alerts.eventsSoon.length} evento(s) nos próximos 7 dias` });
+    const n = alerts.eventsSoon.length;
+    items.push({
+      type: 'info',
+      key: 'eventsSoon',
+      icon: 'calendar-heart',
+      text: formatAlertCount(n, 'evento nos próximos 7 dias', 'eventos nos próximos 7 dias'),
+    });
   }
 
   if (!items.length) {
@@ -244,7 +317,7 @@ function renderAlertsSummary(container, alerts) {
     .map(
       (a) => `
     <div class="alert alert--${a.type} alert--clickable" data-alert="${a.key}" role="button" tabindex="0">
-      <i data-lucide="bell" aria-hidden="true"></i>
+      <i data-lucide="${a.icon}" aria-hidden="true"></i>
       <span>${a.text}</span>
       <i data-lucide="chevron-right" class="alert__chevron" aria-hidden="true"></i>
     </div>
@@ -332,40 +405,81 @@ function bindClickableCard(card, onClick) {
 }
 
 function openMonthPickerModal(currentValue, onConfirm) {
-  const footer = document.createElement('div');
-  footer.className = 'modal__actions';
-  footer.innerHTML = `
-    <button type="button" class="btn btn--secondary" data-action="cancel">Cancelar</button>
-    <button type="button" class="btn btn--primary" data-action="confirm">Aplicar</button>
-  `;
-
-  const { close } = createModal({
+  const { modal, close } = createModal({
     title: 'Selecionar mês',
-    content: `
-      <div class="form-field">
-        <label class="form-field__label" for="modal-month-picker">Mês</label>
-        <input type="month" class="form-field__input" id="modal-month-picker" value="${currentValue}" />
-      </div>
-    `,
-    footer,
+    content: `<div class="month-picker-grid">${renderMonthPickerGrid(currentValue)}</div>`,
+    size: 'sm',
   });
 
-  footer.querySelector('[data-action="cancel"]').addEventListener('click', close);
-  footer.querySelector('[data-action="confirm"]').addEventListener('click', () => {
-    const value = document.getElementById('modal-month-picker')?.value;
-    if (value) onConfirm(value);
-    close();
+  modal.querySelectorAll('[data-month-pick]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      onConfirm(btn.dataset.monthPick);
+      close();
+    });
   });
+}
+
+function getExpectedForMonth(data, mode, customMonth) {
+  const range = getMonthRangeFromFilter(mode, customMonth);
+  const items = filterDueByRange(data.dueInstallments, range);
+  const total = items.reduce((sum, { installment }) => sum + getInstallmentRemaining(installment), 0);
+  return { items, total, label: range.label };
+}
+
+function renderExpectedMonthModalContent(data, mode, customMonth) {
+  const { items, total, label } = getExpectedForMonth(data, mode, customMonth);
+
+  return `
+    <div class="dashboard-filters" id="expected-month-filters">
+      <button type="button" class="btn btn--secondary btn--sm dashboard-filter-btn${mode === 'this-month' ? ' is-active' : ''}" data-expected-month-filter="this-month">Este mês</button>
+      <button type="button" class="btn btn--secondary btn--sm dashboard-filter-btn${mode === 'next-month' ? ' is-active' : ''}" data-expected-month-filter="next-month">Próximo mês</button>
+      <button type="button" class="btn btn--secondary btn--sm dashboard-filter-btn${mode === 'custom' ? ' is-active' : ''}" data-expected-month-filter="custom">Selecionar mês</button>
+    </div>
+    <p class="expected-month-summary">
+      <strong class="expected-month-summary__value">${formatCurrency(total)}</strong>
+      <span class="text-muted"> previsto em ${label}</span>
+    </p>
+    ${renderInstallmentRows(items, 'Nenhuma parcela prevista neste período.')}
+  `;
+}
+
+function openExpectedMonthModal(data, defaultMonthValue) {
+  const state = { mode: 'this-month', customMonth: defaultMonthValue };
+
+  const { body, modal } = createModal({
+    title: 'Previsto por mês',
+    content: '',
+    size: 'lg',
+  });
+
+  const refresh = () => {
+    body.innerHTML = renderExpectedMonthModalContent(data, state.mode, state.customMonth);
+    renderIcons(modal);
+
+    body.querySelectorAll('[data-expected-month-filter]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.expectedMonthFilter === 'custom') {
+          openMonthPickerModal(state.customMonth, (value) => {
+            state.mode = 'custom';
+            state.customMonth = value;
+            refresh();
+          });
+          return;
+        }
+
+        state.mode = btn.dataset.expectedMonthFilter;
+        refresh();
+      });
+    });
+  };
+
+  refresh();
 }
 
 function setMonthFilterActive(container, mode) {
   container.querySelectorAll('[data-month-filter]').forEach((btn) => {
     btn.classList.toggle('is-active', btn.dataset.monthFilter === mode);
   });
-  const selectBtn = container.querySelector('#select-month-btn');
-  if (selectBtn) {
-    selectBtn.classList.toggle('is-active', mode === 'custom');
-  }
 }
 
 function renderDueByMonth(container, data, mode, customMonth) {
@@ -398,6 +512,7 @@ export async function renderDashboardPage(container) {
 
     <div id="dashboard-metrics" class="summary-grid summary-grid--4"></div>
 
+    <div class="dashboard-grid">
     <div class="card dashboard-grid__full">
       <div class="card__header card__header--split">
         <div class="card__header-title-group">
@@ -409,7 +524,6 @@ export async function renderDashboardPage(container) {
       <div class="card__body" id="dashboard-events"></div>
     </div>
 
-    <div class="dashboard-grid">
       <div class="card card--clickable" id="dashboard-alerts-card" role="button" tabindex="0" aria-label="Precisa de atenção. Clique para ver detalhes.">
         <div class="card__header card__header--clickable">
           <h3 class="card__title">Precisa de atenção</h3>
@@ -424,10 +538,10 @@ export async function renderDashboardPage(container) {
           <span class="text-muted" id="due-by-month-label"></span>
         </div>
         <div class="card__body">
-          <div class="dashboard-filters">
+          <div class="dashboard-filters" id="due-month-filters">
             <button type="button" class="btn btn--secondary btn--sm dashboard-filter-btn is-active" data-month-filter="this-month">Este mês</button>
             <button type="button" class="btn btn--secondary btn--sm dashboard-filter-btn" data-month-filter="next-month">Próximo mês</button>
-            <button type="button" class="btn btn--secondary btn--sm dashboard-filter-btn" id="select-month-btn">Selecionar mês</button>
+            <button type="button" class="btn btn--secondary btn--sm dashboard-filter-btn" data-month-filter="custom" id="select-month-btn">Selecionar mês</button>
           </div>
           <div id="due-by-month-list"></div>
         </div>
@@ -508,13 +622,7 @@ export async function renderDashboardPage(container) {
           return;
         }
         if (c.action === 'expected-month') {
-          openDetailModal(
-            'Previsto este mês',
-            renderInstallmentRows(
-              details.expectedThisMonthInstallments,
-              'Nenhuma parcela prevista este mês.'
-            )
-          );
+          openExpectedMonthModal(data, defaultMonthValue);
         }
       });
     });
@@ -559,18 +667,19 @@ export async function renderDashboardPage(container) {
 
     container.querySelectorAll('[data-month-filter]').forEach((btn) => {
       btn.addEventListener('click', () => {
+        if (btn.dataset.monthFilter === 'custom') {
+          openMonthPickerModal(customMonth, (value) => {
+            customMonth = value;
+            monthFilterMode = 'custom';
+            setMonthFilterActive(container, 'custom');
+            renderDueByMonth(container, data, monthFilterMode, customMonth);
+          });
+          return;
+        }
+
         monthFilterMode = btn.dataset.monthFilter;
         setMonthFilterActive(container, monthFilterMode);
         renderDueByMonth(container, data, monthFilterMode, customMonth);
-      });
-    });
-
-    container.querySelector('#select-month-btn').addEventListener('click', () => {
-      openMonthPickerModal(customMonth, (value) => {
-        customMonth = value;
-        monthFilterMode = 'custom';
-        setMonthFilterActive(container, 'custom');
-        renderDueByMonth(container, data, 'custom', customMonth);
       });
     });
   } catch (error) {

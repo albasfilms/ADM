@@ -316,11 +316,6 @@
     gap: var(--space-3);
   }
 
-  .contract-card__signed-link {
-    max-width: 100%;
-    word-break: break-word;
-  }
-
   #detail-actions {
     flex-direction: column;
     width: 100%;
