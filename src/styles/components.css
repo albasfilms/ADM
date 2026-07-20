@@ -85,6 +85,87 @@
   color: var(--color-gray-700);
 }
 
+.form-field__label-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.form-field__info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  padding: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-style: italic;
+  line-height: 1;
+  color: var(--color-gray-600);
+  background: var(--color-gray-100);
+  border: 1px solid var(--color-gray-200);
+  border-radius: 999px;
+  cursor: help;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.form-field__info-btn:hover,
+.form-field__info-btn:focus-visible {
+  color: var(--color-gray-900);
+  background: var(--color-white);
+  border-color: var(--color-gray-300);
+  outline: none;
+}
+
+.form-field__tooltip {
+  position: relative;
+  display: inline-flex;
+}
+
+.form-field__tooltip-text {
+  position: absolute;
+  bottom: calc(100% + 0.5rem);
+  left: 50%;
+  z-index: 20;
+  width: max-content;
+  max-width: 220px;
+  padding: 0.5rem 0.625rem;
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+  font-style: normal;
+  line-height: 1.45;
+  color: var(--color-gray-700);
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-50%) translateY(4px);
+  transition: opacity var(--transition-fast), transform var(--transition-fast), visibility var(--transition-fast);
+}
+
+.form-field__tooltip-text::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  border: 5px solid transparent;
+  border-top-color: var(--color-gray-200);
+  transform: translateX(-50%);
+}
+
+.form-field__tooltip:hover .form-field__tooltip-text,
+.form-field__tooltip:focus-within .form-field__tooltip-text {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
 .form-field__input {
   width: 100%;
   padding: 0.75rem 1rem;
@@ -806,6 +887,62 @@
 
 .payment-plan-field.is-visible {
   display: flex !important;
+}
+
+.payment-plan-field.payment-plan-field--custom-hidden {
+  display: none !important;
+}
+
+.custom-installments-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4);
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-100);
+  border-radius: var(--radius-md);
+}
+
+.custom-installments-panel[hidden],
+#custom-installments-field[hidden] {
+  display: none !important;
+}
+
+.custom-installments-table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.custom-installments-list__header,
+.custom-installment-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 140px;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.custom-installments-list__header {
+  padding: 0 var(--space-1);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-gray-500);
+}
+
+.custom-installments-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.custom-installment-row__label {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-gray-700);
+  text-align: center;
 }
 
 .contract-total {

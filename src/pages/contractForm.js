@@ -163,9 +163,224 @@ function bindStateCityFields(form) {
   refreshCities(citySelect.value);
 }
 
+function getEntryAmountCents(form, totalCents) {
+  const entryAmount = parseCurrencyInput(form.querySelector('[name="entryAmount"]')?.value || '');
+  const entryPercent = parseFloat(form.querySelector('[name="entryPercent"]')?.value) || 0;
+  return entryAmount > 0 ? entryAmount : calculateEntryAmount(totalCents, entryPercent, null);
+}
+
+function isCustomInstallmentsEnabled(form) {
+  return Boolean(form.querySelector('#custom-installments-enabled')?.checked);
+}
+
+function getDefaultInstallmentAmounts(form, totalCents) {
+  const installmentCount = parseInt(form.querySelector('[name="installmentCount"]')?.value, 10) || 0;
+  const remaining = Math.max(0, totalCents - getEntryAmountCents(form, totalCents));
+
+  if (installmentCount <= 0 || remaining <= 0) return [];
+
+  const baseAmount = Math.floor(remaining / installmentCount);
+  const amounts = Array.from({ length: installmentCount - 1 }, () => baseAmount);
+  amounts.push(remaining - baseAmount * (installmentCount - 1));
+  return amounts;
+}
+
+function getCustomInstallmentAmounts(form) {
+  return [...form.querySelectorAll('[name^="customInstallmentAmount_"]')].map((input) =>
+    parseCurrencyInput(input.value || '')
+  );
+}
+
+function getCustomInstallmentDateValues(form) {
+  return [...form.querySelectorAll('[name^="customInstallmentDate_"]')].map((input) => input.value || '');
+}
+
+function getCustomInstallmentDates(form) {
+  return getCustomInstallmentDateValues(form).map((value) => parseFormDate(value));
+}
+
+function getDefaultInstallmentDates(form) {
+  const installmentCount = parseInt(form.querySelector('[name="installmentCount"]')?.value, 10) || 0;
+  const firstDueDate = parseFormDate(form.querySelector('[name="firstDueDate"]')?.value);
+  const intervalMonths = parseInt(form.querySelector('[name="installmentIntervalMonths"]')?.value, 10) || 1;
+
+  if (!firstDueDate || installmentCount <= 0) {
+    return Array.from({ length: installmentCount }, () => null);
+  }
+
+  return Array.from({ length: installmentCount }, (_, index) =>
+    addMonths(firstDueDate, index * intervalMonths)
+  );
+}
+
+function syncCustomInstallmentsSummary(form) {
+  const hint = form.querySelector('#custom-installments-hint');
+  if (!hint || !isCustomInstallmentsEnabled(form)) return;
+
+  const totalCents = getContractTotalCents(form);
+  const entry = getEntryAmountCents(form, totalCents);
+  const remaining = Math.max(0, totalCents - entry);
+  const customSum = sumCents(getCustomInstallmentAmounts(form));
+  const diff = remaining - customSum;
+
+  if (remaining <= 0) {
+    hint.textContent = 'Sem saldo para parcelar após a entrada.';
+    return;
+  }
+
+  if (diff === 0) {
+    hint.textContent = `Parcelas personalizadas somam ${formatCurrency(customSum)}.`;
+    return;
+  }
+
+  if (diff > 0) {
+    hint.textContent = `Faltam ${formatCurrency(diff)} para fechar o restante de ${formatCurrency(remaining)}.`;
+    return;
+  }
+
+  hint.textContent = `As parcelas passam ${formatCurrency(Math.abs(diff))} do restante de ${formatCurrency(remaining)}.`;
+}
+
+function renderCustomInstallmentFields(form) {
+  const list = form.querySelector('#custom-installments-list');
+  if (!list || !isCustomInstallmentsEnabled(form)) return;
+
+  const installmentCount = parseInt(form.querySelector('[name="installmentCount"]')?.value, 10) || 0;
+  const existingAmounts = getCustomInstallmentAmounts(form);
+  const existingDateValues = getCustomInstallmentDateValues(form);
+  const totalCents = getContractTotalCents(form);
+  const defaultAmounts = getDefaultInstallmentAmounts(form, totalCents);
+  const defaultDateValues = getDefaultInstallmentDates(form).map((date) =>
+    date ? toDateInputString(date) : ''
+  );
+
+  list.innerHTML = '';
+
+  if (installmentCount <= 0) {
+    syncCustomInstallmentsSummary(form);
+    return;
+  }
+
+  for (let index = 0; index < installmentCount; index += 1) {
+    const amount = existingAmounts[index] ?? defaultAmounts[index] ?? 0;
+    const dateValue = existingDateValues[index] || defaultDateValues[index] || '';
+    list.insertAdjacentHTML(
+      'beforeend',
+      `
+      <div class="custom-installment-row">
+        <span class="custom-installment-row__label">${index + 1}</span>
+        <input
+          class="form-field__input"
+          type="date"
+          id="custom-installment-date-${index}"
+          name="customInstallmentDate_${index}"
+          value="${dateValue}"
+          aria-label="Vencimento da parcela ${index + 1}"
+        />
+        <input
+          class="form-field__input currency-input"
+          id="custom-installment-${index}"
+          name="customInstallmentAmount_${index}"
+          value="${amount ? formatCurrencyInput(amount) : ''}"
+          placeholder="0,00"
+          aria-label="Valor da parcela ${index + 1}"
+        />
+      </div>
+    `
+    );
+  }
+
+  list.querySelectorAll('.currency-input').forEach(bindCurrencyInput);
+  syncCustomInstallmentsSummary(form);
+}
+
+function syncCustomInstallmentsUI(form) {
+  const wrapper = form.querySelector('#custom-installments-field');
+  const panel = form.querySelector('#custom-installments-panel');
+  const list = form.querySelector('#custom-installments-list');
+  const hint = form.querySelector('#custom-installments-hint');
+  const enabled = isCustomInstallmentsEnabled(form);
+
+  if (wrapper) wrapper.hidden = !enabled;
+  if (panel) panel.hidden = !enabled;
+
+  form
+    .querySelectorAll('[data-payment-field="firstDueDate"], [data-payment-field="intervalMonths"]')
+    .forEach((field) => {
+      field.classList.toggle('payment-plan-field--custom-hidden', enabled);
+    });
+
+  if (enabled) {
+    renderCustomInstallmentFields(form);
+    return;
+  }
+
+  if (list) list.innerHTML = '';
+  if (hint) {
+    hint.textContent = '';
+    hint.hidden = true;
+  }
+
+  syncInstallmentBreakdown(form);
+}
+
+function bindCustomInstallmentFields(form) {
+  form.querySelector('#custom-installments-enabled')?.addEventListener('change', () => {
+    syncCustomInstallmentsUI(form);
+  });
+
+  form.querySelector('#custom-installments-list')?.addEventListener('input', (event) => {
+    if (!event.target.matches('[name^="customInstallmentAmount_"]')) return;
+    syncCustomInstallmentsSummary(form);
+  });
+}
+
+function buildCustomInstallmentPlan(form, data, totalCents) {
+  const params = getPaymentPlanParams({
+    planType: PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING,
+    totalCents,
+    data,
+  });
+  const entry = calculateEntryAmount(totalCents, params.entryPercent, params.entryAmountCents);
+  const customAmounts = getCustomInstallmentAmounts(form);
+  const customDates = getCustomInstallmentDates(form);
+  const defaultDates = getDefaultInstallmentDates(form);
+  const firstDueDate = parseFormDate(data.firstDueDate) || new Date();
+  const entryDueDate = parseFormDate(data.closingDate) || new Date();
+  const installments = [];
+
+  if (entry > 0) {
+    installments.push({
+      number: 0,
+      description: formatInstallmentDescription({ number: 0, expectedAmount: entry }),
+      expectedAmount: entry,
+      dueDate: new Date(entryDueDate),
+    });
+  }
+
+  customAmounts.forEach((amount, index) => {
+    const dueDate = customDates[index] || defaultDates[index] || firstDueDate;
+    installments.push({
+      number: index + 1,
+      description: formatInstallmentDescription({ number: index + 1, expectedAmount: amount }),
+      expectedAmount: amount,
+      dueDate: new Date(dueDate),
+    });
+  });
+
+  return installments;
+}
+
 function syncInstallmentBreakdown(form) {
   const hint = form.querySelector('#installment-breakdown-hint');
   if (!hint) return;
+
+  if (isCustomInstallmentsEnabled(form)) {
+    hint.hidden = true;
+    hint.textContent = '';
+    syncCustomInstallmentsSummary(form);
+    return;
+  }
 
   if (getSelectedPaymentPlanType(form) !== PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING) {
     hint.hidden = true;
@@ -175,9 +390,7 @@ function syncInstallmentBreakdown(form) {
 
   const totalCents = getContractTotalCents(form);
   const installmentCount = parseInt(form.querySelector('[name="installmentCount"]')?.value, 10) || 0;
-  const entryAmount = parseCurrencyInput(form.querySelector('[name="entryAmount"]')?.value || '');
-  const entryPercent = parseFloat(form.querySelector('[name="entryPercent"]')?.value) || 0;
-  const entry = entryAmount > 0 ? entryAmount : calculateEntryAmount(totalCents, entryPercent, null);
+  const entry = getEntryAmountCents(form, totalCents);
 
   if (totalCents <= 0 || installmentCount <= 0) {
     hint.hidden = true;
@@ -260,6 +473,12 @@ function updatePaymentFieldLabels(form, planType) {
   if (firstDueLabel) firstDueLabel.textContent = 'Primeiro vencimento';
 }
 
+function setFirstDueDateValue(input, value) {
+  input.dataset.programmaticUpdate = 'true';
+  input.value = value;
+  delete input.dataset.programmaticUpdate;
+}
+
 function syncFirstDueFromEvent(form) {
   if (getSelectedPaymentPlanType(form) !== PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING) return;
 
@@ -269,19 +488,33 @@ function syncFirstDueFromEvent(form) {
   const hint = form.querySelector('#first-due-hint');
   if (!firstDueDate) return;
 
+  firstDueDate.readOnly = false;
+
   if (eventDate) {
-    firstDueDate.value = toDateInputString(getFirstDueBeforeEvent(eventDate, installmentCount));
-    firstDueDate.readOnly = true;
+    const suggested = toDateInputString(getFirstDueBeforeEvent(eventDate, installmentCount));
+    const userEdited = firstDueDate.dataset.userEdited === 'true';
+
+    if (!userEdited || !firstDueDate.value) {
+      setFirstDueDateValue(firstDueDate, suggested);
+      if (!userEdited) {
+        firstDueDate.dataset.userEdited = 'false';
+      }
+    }
+
     if (hint) {
-      hint.textContent = `Primeira parcela ${installmentCount} mês(es) antes do evento (${formatDateLabel(eventDate)}).`;
+      const suggestionLabel = formatDateLabel(parseFormDate(suggested));
+      hint.textContent = userEdited
+        ? `Sugestão automática: ${suggestionLabel} (${installmentCount} mês(es) antes do evento).`
+        : `Primeira parcela ${installmentCount} mês(es) antes do evento (${formatDateLabel(eventDate)}). Você pode alterar se precisar.`;
       hint.hidden = false;
     }
-  } else {
-    firstDueDate.readOnly = false;
-    if (hint) {
-      hint.textContent = 'Informe a data do evento para calcular os vencimentos automaticamente.';
-      hint.hidden = false;
-    }
+  } else if (hint) {
+    hint.textContent = 'Informe a data do evento para sugerir o primeiro vencimento automaticamente.';
+    hint.hidden = false;
+  }
+
+  if (isCustomInstallmentsEnabled(form)) {
+    renderCustomInstallmentFields(form);
   }
 }
 
@@ -312,9 +545,14 @@ function applyPaymentPlanPreset(form) {
       'intervalMonths',
     ]);
     updatePaymentFieldLabels(form, planType);
+    markEntryPercentAsSource(form);
     if (entryPercent) entryPercent.value = '30';
     if (entryAmount) entryAmount.readOnly = false;
     if (entryPaymentMethod) entryPaymentMethod.value = PAYMENT_METHODS.PIX;
+    if (firstDueDate) firstDueDate.dataset.userEdited = 'false';
+    const customCheckbox = form.querySelector('#custom-installments-enabled');
+    if (customCheckbox) customCheckbox.checked = false;
+    syncCustomInstallmentsUI(form);
     if (installmentCount) {
       installmentCount.value = '4';
       installmentCount.min = '1';
@@ -367,6 +605,11 @@ function applyPaymentPlanPreset(form) {
 
 function buildPaymentPlan(form, data, totalCents) {
   const planType = getSelectedPaymentPlanType(form);
+
+  if (planType === PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING && isCustomInstallmentsEnabled(form)) {
+    return buildCustomInstallmentPlan(form, data, totalCents);
+  }
+
   const params = getPaymentPlanParams({ planType, totalCents, data });
   const plan = calculatePaymentPlan({
     totalCents,
@@ -433,7 +676,7 @@ function getNextContractItem(form) {
 
   return {
     serviceType: nextType,
-    description: SERVICE_TYPE_LABELS[nextType] || '',
+    description: '',
     amount: hasCatalogPrice(nextType) ? getServicePrice(nextType, allTypes) : 0,
   };
 }
@@ -455,19 +698,12 @@ function syncServicePrices(form) {
     const index = row.dataset.itemIndex;
     const serviceType = form.querySelector(`[name="itemServiceType_${index}"]`)?.value;
     const amountInput = form.querySelector(`[name="itemAmount_${index}"]`);
-    const descriptionInput = form.querySelector(`[name="itemDescription_${index}"]`);
 
     if (!serviceType || !amountInput || !hasCatalogPrice(serviceType)) return;
     if (amountInput.dataset.autoPrice === 'false') return;
 
     const price = getServicePrice(serviceType, selectedTypes);
     amountInput.value = formatCurrencyInput(price);
-
-    const label = SERVICE_TYPE_LABELS[serviceType] || '';
-    if (descriptionInput && (!descriptionInput.value.trim() || descriptionInput.dataset.autoDescription === 'true')) {
-      descriptionInput.value = label;
-      descriptionInput.dataset.autoDescription = 'true';
-    }
   });
 
   updateTotalDisplay(form);
@@ -484,14 +720,8 @@ function bindServiceItemPricing(form) {
 
     const index = select.name.replace('itemServiceType_', '');
     const amountInput = form.querySelector(`[name="itemAmount_${index}"]`);
-    const descriptionInput = form.querySelector(`[name="itemDescription_${index}"]`);
 
     if (amountInput) amountInput.dataset.autoPrice = 'true';
-    if (descriptionInput) descriptionInput.dataset.autoDescription = 'true';
-
-    if (descriptionInput && !descriptionInput.value.trim()) {
-      descriptionInput.value = SERVICE_TYPE_LABELS[select.value] || '';
-    }
 
     syncServicePrices(form);
   });
@@ -499,9 +729,6 @@ function bindServiceItemPricing(form) {
   itemsContainer.addEventListener('input', (event) => {
     if (event.target.name?.startsWith('itemAmount_')) {
       event.target.dataset.autoPrice = 'false';
-    }
-    if (event.target.name?.startsWith('itemDescription_')) {
-      event.target.dataset.autoDescription = 'false';
     }
   });
 }
@@ -524,9 +751,8 @@ function getContractFormStatus(contract) {
 function buildItemRow(item = {}, index = 0) {
   const serviceType = item.serviceType || SERVICE_TYPES.STORYMAKER;
   const autoPrice = item.amount ? '' : 'true';
-  const autoDescription = item.description ? '' : 'true';
   const amount = item.amount || (hasCatalogPrice(serviceType) ? getServicePrice(serviceType, [serviceType]) : 0);
-  const description = item.description || (hasCatalogPrice(serviceType) ? SERVICE_TYPE_LABELS[serviceType] : '');
+  const description = item.description || '';
 
   return `
     <div class="contract-item-row" data-item-index="${index}">
@@ -534,7 +760,7 @@ function buildItemRow(item = {}, index = 0) {
         ${contractItemServiceOptions(serviceType)}
       </select>
       <input class="form-field__input" name="itemDescription_${index}" placeholder="Descrição do serviço"
-        value="${escapeHtml(description)}" data-auto-description="${autoDescription}" />
+        value="${escapeHtml(description)}" />
       <input class="form-field__input currency-input" name="itemAmount_${index}" placeholder="0,00"
         value="${amount ? formatCurrencyInput(amount) : ''}" data-auto-price="${autoPrice}" />
       <button type="button" class="btn btn--ghost btn--sm" data-remove-item="${index}" aria-label="Remover item">
@@ -610,7 +836,41 @@ function getFormData(form, existingContract = null) {
   };
 }
 
-function validateContractForm(data, items, { isEdit = false, isNewClient = false } = {}) {
+function validateCustomInstallments(form, data, items) {
+  const errors = {};
+  if (!form || !isCustomInstallmentsEnabled(form)) return errors;
+  if (data.paymentPlanType !== PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING) return errors;
+
+  const subtotal = sumCents(items.map((i) => i.amount));
+  const discount = data.discountEnabled ? Number(data.discountAmount) || 0 : 0;
+  const total = Math.max(0, subtotal - discount);
+  const remaining = Math.max(0, total - getEntryAmountCents(form, total));
+  const customSum = sumCents(getCustomInstallmentAmounts(form));
+  const installmentCount = parseInt(form.querySelector('[name="installmentCount"]')?.value, 10) || 0;
+  const customDates = getCustomInstallmentDates(form);
+
+  if (remaining <= 0) {
+    errors.customInstallments = 'Não há saldo para parcelar após a entrada.';
+    return errors;
+  }
+
+  if (customDates.length < installmentCount || customDates.some((date) => !date)) {
+    errors.customInstallments = 'Informe a data de vencimento de cada parcela.';
+    return errors;
+  }
+
+  if (customSum !== remaining) {
+    if (customSum < remaining) {
+      errors.customInstallments = `Faltam ${formatCurrency(remaining - customSum)} para fechar o restante.`;
+    } else {
+      errors.customInstallments = `As parcelas passam ${formatCurrency(customSum - remaining)} do restante.`;
+    }
+  }
+
+  return errors;
+}
+
+function validateContractForm(data, items, { isEdit = false, isNewClient = false, form = null } = {}) {
   const errors = {};
   if (!isNewClient && !data.clientId) errors.clientId = 'Selecione um cliente.';
   if (!data.title?.trim()) errors.title = 'O título é obrigatório.';
@@ -643,6 +903,8 @@ function validateContractForm(data, items, { isEdit = false, isNewClient = false
         errors.installmentCount = 'Informe entre 1 e 10 parcelas no cartão.';
       }
     }
+
+    Object.assign(errors, validateCustomInstallments(form, data, items));
   }
   return errors;
 }
@@ -673,7 +935,7 @@ function updateTotalDisplay(form) {
   if (subtotalEl) subtotalEl.textContent = formatCurrency(subtotal);
   if (discountEl) discountEl.textContent = formatCurrency(discount);
 
-  syncEntryFromPercent(form, total);
+  syncEntryFields(form, total);
   syncInstallmentBreakdown(form);
   return total;
 }
@@ -706,6 +968,48 @@ function syncEntryFromPercent(form, totalCents) {
     entryInput.value = formatCurrencyInput(entry);
   } else if (percent === 0) {
     entryInput.value = '';
+  }
+}
+
+function syncPercentFromAmount(form, totalCents) {
+  const percentInput = form.querySelector('[name="entryPercent"]');
+  const entryInput = form.querySelector('[name="entryAmount"]');
+  if (!percentInput || !entryInput) return;
+
+  if (getSelectedPaymentPlanType(form) !== PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING) return;
+
+  const entryCents = parseCurrencyInput(entryInput.value || '');
+  if (totalCents <= 0 || entryCents <= 0) {
+    percentInput.value = '0';
+    return;
+  }
+
+  const percent = Math.min(100, Math.round((entryCents * 100) / totalCents));
+  percentInput.value = String(percent);
+}
+
+function markEntryPercentAsSource(form) {
+  const percentInput = form.querySelector('[name="entryPercent"]');
+  const entryInput = form.querySelector('[name="entryAmount"]');
+  if (percentInput) percentInput.dataset.entrySource = 'true';
+  if (entryInput) entryInput.dataset.entrySource = 'false';
+}
+
+function markEntryAmountAsSource(form) {
+  const percentInput = form.querySelector('[name="entryPercent"]');
+  const entryInput = form.querySelector('[name="entryAmount"]');
+  if (percentInput) percentInput.dataset.entrySource = 'false';
+  if (entryInput) entryInput.dataset.entrySource = 'true';
+}
+
+function syncEntryFields(form, totalCents) {
+  const entryInput = form.querySelector('[name="entryAmount"]');
+  const useAmountAsSource = entryInput?.dataset.entrySource === 'true';
+
+  if (useAmountAsSource) {
+    syncPercentFromAmount(form, totalCents);
+  } else {
+    syncEntryFromPercent(form, totalCents);
   }
 }
 
@@ -938,7 +1242,7 @@ export function openContractFormModal({
   const initialItems =
     items.length > 0
       ? items
-      : [{ serviceType: SERVICE_TYPES.STORYMAKER, description: SERVICE_TYPE_LABELS[SERVICE_TYPES.STORYMAKER], amount: 0 }];
+      : [{ serviceType: SERVICE_TYPES.STORYMAKER, description: '', amount: 0 }];
   const initialSubtotalCents = sumCents(initialItems.map((item) => item.amount));
   const initialDiscountAmount = contract?.discountAmount || 0;
   const initialDiscountEnabled = initialDiscountAmount > 0;
@@ -1100,7 +1404,32 @@ export function openContractFormModal({
           <label class="form-field__label" id="installment-count-label">Nº de parcelas antes do casamento</label>
           <input class="form-field__input" type="number" name="installmentCount" min="1" max="24" value="4" />
           <p class="form-field__hint" id="installment-breakdown-hint" hidden></p>
+          <label class="form-checkbox" for="custom-installments-enabled">
+            <input
+              type="checkbox"
+              id="custom-installments-enabled"
+              name="customInstallmentsEnabled"
+            />
+            Ajustar parcelas personalizadas
+          </label>
           <span class="form-field__error" data-error="installmentCount" hidden></span>
+        </div>
+        <div class="form-field form-field--full payment-plan-field is-visible" id="custom-installments-field" data-payment-field="installmentCount">
+          <div class="custom-installments-panel" id="custom-installments-panel" hidden>
+            <p class="form-field__hint">
+              Informe o vencimento e o valor de cada parcela. A soma dos valores deve fechar o restante após a entrada.
+            </p>
+            <div class="custom-installments-table">
+              <div class="custom-installments-list__header">
+                <span>Parcela</span>
+                <span>Vencimento</span>
+                <span>Valor</span>
+              </div>
+              <div class="custom-installments-list" id="custom-installments-list"></div>
+            </div>
+            <p class="form-field__hint" id="custom-installments-hint"></p>
+            <span class="form-field__error" data-error="customInstallments" hidden></span>
+          </div>
         </div>
         <div class="form-field payment-plan-field is-visible" data-payment-field="firstDueDate">
           <label class="form-field__label" id="first-due-label">Primeiro vencimento</label>
@@ -1108,8 +1437,29 @@ export function openContractFormModal({
           <p class="form-field__hint" id="first-due-hint"></p>
         </div>
         <div class="form-field payment-plan-field is-visible" data-payment-field="intervalMonths">
-          <label class="form-field__label">Intervalo (meses)</label>
-          <input class="form-field__input" type="number" name="installmentIntervalMonths" min="1" max="12" value="1" />
+          <div class="form-field__label-row">
+            <label class="form-field__label" for="installment-interval-months">Intervalo (meses)</label>
+            <span class="form-field__tooltip">
+              <button
+                type="button"
+                class="form-field__info-btn"
+                aria-label="O que é intervalo entre parcelas"
+                aria-describedby="interval-months-tooltip"
+              >i</button>
+              <span class="form-field__tooltip-text" id="interval-months-tooltip" role="tooltip">
+                Quanto tempo passa entre o vencimento de uma parcela e da próxima. 1 = todo mês, 2 = de 2 em 2 meses.
+              </span>
+            </span>
+          </div>
+          <input
+            class="form-field__input"
+            type="number"
+            id="installment-interval-months"
+            name="installmentIntervalMonths"
+            min="1"
+            max="12"
+            value="1"
+          />
         </div>
       </div>
     </div>
@@ -1202,9 +1552,17 @@ export function openContractFormModal({
   form.querySelectorAll('.currency-input').forEach(bindCurrencyInput);
 
   form.addEventListener('input', (event) => {
-    if (event.target.classList.contains('currency-input')) {
-      updateTotalDisplay(form);
+    if (!event.target.classList.contains('currency-input')) return;
+
+    if (event.target.name === 'entryAmount') {
+      markEntryAmountAsSource(form);
+      const total = getContractTotalCents(form);
+      syncPercentFromAmount(form, total);
+      syncInstallmentBreakdown(form);
+      return;
     }
+
+    updateTotalDisplay(form);
   });
 
   form.querySelector('#add-item-btn')?.addEventListener('click', () => {
@@ -1237,6 +1595,7 @@ export function openContractFormModal({
   bindServiceItemPricing(form);
   bindStateCityFields(form);
   bindContractDiscountFields(form);
+  bindCustomInstallmentFields(form);
   if (!isEdit) {
     applyPaymentPlanPreset(form);
     syncServicePrices(form);
@@ -1252,6 +1611,23 @@ export function openContractFormModal({
     syncFirstDueFromEvent(form);
   });
 
+  form.querySelector('[name="firstDueDate"]')?.addEventListener('change', () => {
+    const firstDueDate = form.querySelector('[name="firstDueDate"]');
+    if (firstDueDate?.dataset.programmaticUpdate === 'true') return;
+    if (firstDueDate?.value) {
+      firstDueDate.dataset.userEdited = 'true';
+    }
+    if (isCustomInstallmentsEnabled(form)) {
+      renderCustomInstallmentFields(form);
+    }
+  });
+
+  form.querySelector('[name="installmentIntervalMonths"]')?.addEventListener('input', () => {
+    if (isCustomInstallmentsEnabled(form)) {
+      renderCustomInstallmentFields(form);
+    }
+  });
+
   form.querySelector('[name="closingDate"]')?.addEventListener('change', () => {
     if (getSelectedPaymentPlanType(form) === PAYMENT_PLAN_TYPES.CASH) {
       const firstDueDate = form.querySelector('[name="firstDueDate"]');
@@ -1264,15 +1640,16 @@ export function openContractFormModal({
 
   form.querySelector('[name="installmentCount"]')?.addEventListener('input', () => {
     syncFirstDueFromEvent(form);
-    syncInstallmentBreakdown(form);
+    if (isCustomInstallmentsEnabled(form)) {
+      syncCustomInstallmentsUI(form);
+    } else {
+      syncInstallmentBreakdown(form);
+    }
   });
 
   form.querySelector('[name="entryPercent"]')?.addEventListener('input', () => {
+    markEntryPercentAsSource(form);
     updateTotalDisplay(form);
-  });
-
-  form.querySelector('[name="entryAmount"]')?.addEventListener('input', () => {
-    syncInstallmentBreakdown(form);
   });
 
   footer.querySelector('[data-action="cancel"]').addEventListener('click', close);
@@ -1281,7 +1658,7 @@ export function openContractFormModal({
     const data = getFormData(form);
     const itemsCollected = collectItems(form);
     const isNewClient = isNewClientSelected(data.clientId);
-    const errors = validateContractForm(data, itemsCollected, { isNewClient });
+    const errors = validateContractForm(data, itemsCollected, { isNewClient, form });
 
     if (Object.keys(errors).length > 0) {
       showFormErrors(form, errors);
@@ -1338,7 +1715,7 @@ export function openContractFormModal({
       const data = getFormData(form, contract);
       const itemsCollected = collectItems(form);
       const isNewClient = isNewClientSelected(data.clientId);
-      const errors = validateContractForm(data, itemsCollected, { isEdit, isNewClient });
+      const errors = validateContractForm(data, itemsCollected, { isEdit, isNewClient, form });
 
       if (Object.keys(errors).length > 0) {
         showFormErrors(form, errors);

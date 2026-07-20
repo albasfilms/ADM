@@ -74,14 +74,21 @@ export function bindCurrencyInput(input) {
       return;
     }
 
-    if (event.key === 'Backspace') {
+    if (event.key === 'Backspace' || event.key === 'Delete') {
       event.preventDefault();
-      applyCents(Math.floor(cents / 10));
-      return;
-    }
 
-    if (event.key === 'Delete') {
-      event.preventDefault();
+      const start = input.selectionStart ?? 0;
+      const end = input.selectionEnd ?? 0;
+      if (start !== end) {
+        applyCents(0);
+        return;
+      }
+
+      if (event.key === 'Backspace') {
+        applyCents(Math.floor(cents / 10));
+        return;
+      }
+
       applyCents(0);
       return;
     }
@@ -92,6 +99,14 @@ export function bindCurrencyInput(input) {
     }
 
     event.preventDefault();
+
+    const start = input.selectionStart ?? 0;
+    const end = input.selectionEnd ?? 0;
+    if (start !== end) {
+      applyCents(parseInt(event.key, 10));
+      return;
+    }
+
     applyCents(cents * 10 + parseInt(event.key, 10));
   });
 

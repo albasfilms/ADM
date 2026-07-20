@@ -4,12 +4,12 @@ import {
   updateClient,
   resolveClientCoupleFields,
   splitCoupleName,
-  getClientDisplayName,
 } from '../services/clientService.js';
 import {
   CLIENT_STATUS,
   PERSON_TYPES,
   BRAZILIAN_STATES,
+  EVENT_TYPE_LABELS,
 } from '../utils/constants.js';
 import {
   validateClientForm,
@@ -26,23 +26,59 @@ export function isNewClientSelected(clientId) {
   return clientId === NEW_CLIENT_ID;
 }
 
+function getFirstName(fullName = '') {
+  const trimmed = fullName.trim();
+  if (!trimmed) return '';
+  return trimmed.split(/\s+/)[0];
+}
+
+function getCoupleFirstNames(clientData) {
+  let brideName = clientData.name?.trim() || '';
+  let groomName = clientData.partnerName?.trim() || '';
+
+  if (!groomName && /\s+e\s+/i.test(brideName)) {
+    const split = splitCoupleName(brideName);
+    brideName = split.name;
+    groomName = split.partnerName;
+  }
+
+  return {
+    brideFirst: getFirstName(brideName),
+    groomFirst: getFirstName(groomName),
+  };
+}
+
+export function buildSuggestedContractTitle(contractForm, clientData) {
+  const eventType = contractForm.querySelector('[name="eventType"]')?.value;
+  const eventLabel = EVENT_TYPE_LABELS[eventType] || 'Casamento';
+  const { brideFirst, groomFirst } = getCoupleFirstNames(clientData);
+
+  if (brideFirst && groomFirst) {
+    return `${eventLabel} ${brideFirst} e ${groomFirst}`;
+  }
+
+  if (brideFirst) {
+    return `${eventLabel} ${brideFirst}`;
+  }
+
+  return '';
+}
+
+export function syncContractTitleFromClient(contractForm, clientForm) {
+  const titleInput = contractForm?.querySelector('[name="title"]');
+  if (!titleInput || titleInput.dataset.userEdited === 'true') return;
+
+  const suggestedTitle = buildSuggestedContractTitle(contractForm, getClientFormData(clientForm));
+  if (suggestedTitle) {
+    titleInput.value = suggestedTitle;
+  }
+}
+
 export function bindContractFieldsFromClient(contractForm, clientForm) {
   if (!contractForm || !clientForm) return;
 
   const syncTitle = () => {
-    const titleInput = contractForm.querySelector('[name="title"]');
-    if (!titleInput || titleInput.dataset.userEdited === 'true') return;
-
-    const data = getClientFormData(clientForm);
-    const displayName = getClientDisplayName({
-      name: data.name,
-      partnerName: data.partnerName,
-      isCouple: data.isCouple,
-    });
-
-    if (displayName) {
-      titleInput.value = data.isCouple ? `Casamento ${displayName}` : displayName;
-    }
+    syncContractTitleFromClient(contractForm, clientForm);
   };
 
   const syncLocation = () => {
@@ -68,6 +104,7 @@ export function bindContractFieldsFromClient(contractForm, clientForm) {
   };
 
   contractForm.querySelector('[name="title"]')?.addEventListener('input', markTitleEdited);
+  contractForm.querySelector('[name="eventType"]')?.addEventListener('change', syncTitle);
 
   ['#client-name', '#client-partnerName', '#client-isCouple'].forEach((selector) => {
     clientForm.querySelector(selector)?.addEventListener('input', syncTitle);
@@ -78,6 +115,8 @@ export function bindContractFieldsFromClient(contractForm, clientForm) {
     clientForm.querySelector(selector)?.addEventListener('change', syncLocation);
     clientForm.querySelector(selector)?.addEventListener('input', syncLocation);
   });
+
+  syncTitle();
 }
 
 function setCoupleMode(form, enabled, { preserveNames = true } = {}) {
@@ -184,6 +223,7 @@ function applyQuickClientParse(form, parsed) {
   }
 
   form.querySelector('#client-name')?.dispatchEvent(new Event('input', { bubbles: true }));
+  form.querySelector('#client-partnerName')?.dispatchEvent(new Event('input', { bubbles: true }));
   form.querySelector('#client-city')?.dispatchEvent(new Event('change', { bubbles: true }));
   form.querySelector('#client-state')?.dispatchEvent(new Event('change', { bubbles: true }));
 }
@@ -261,6 +301,9 @@ function bindQuickClientRegister(form, contractForm = null) {
 
     applyQuickClientParse(form, parsed);
     applyQuickContractParse(contractForm, parsed);
+    if (contractForm) {
+      syncContractTitleFromClient(contractForm, form);
+    }
     showToast('Campos preenchidos automaticamente.', 'success');
   };
 
