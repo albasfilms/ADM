@@ -83,7 +83,7 @@ export const SERVICE_TYPE_LABELS = {
   [SERVICE_TYPES.PRE_WEDDING]: 'Pré wedding',
   [SERVICE_TYPES.DRONE]: 'Drone',
   [SERVICE_TYPES.MAKING_OF]: 'Making of',
-  [SERVICE_TYPES.FRESTA]: 'Fresta',
+  [SERVICE_TYPES.FRESTA]: 'Festa',
   [SERVICE_TYPES.FILMMAKER]: 'Filmmaker',
   [SERVICE_TYPES.PHOTOGRAPHY]: 'Fotografia',
   [SERVICE_TYPES.WEDDING]: 'Casamento',

@@ -55,7 +55,6 @@ export const DEFAULT_CONTRACT_TEMPLATE_HTML = `
 
   <h2>CLÁUSULA 4 — DISPOSIÇÕES GERAIS</h2>
   <p>{{contract.description}}</p>
-  <p>{{contract.notes}}</p>
 
   <p class="contract-doc__closing">
     E, por estarem de pleno acordo, firmam o presente contrato em

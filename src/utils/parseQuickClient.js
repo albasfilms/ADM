@@ -26,7 +26,12 @@ const FIELD_LABELS = {
   address: ['endereco', 'endereço', 'rua', 'logradouro', 'address', 'av', 'avenida'],
   city: ['cidade', 'city', 'municipio', 'município'],
   state: ['estado', 'uf', 'state'],
-  notes: ['observacoes', 'observações', 'obs', 'notas', 'anotacoes', 'anotações', 'info', 'informacoes', 'informações'],
+  eventDate: ['data do evento', 'data evento', 'data do casamento', 'data casamento'],
+  eventTime: ['horario do evento', 'horário do evento', 'horario', 'horário', 'hora do evento', 'hora'],
+  eventLocation: ['local do evento', 'local evento', 'local da festa', 'local', 'cerimonia', 'cerimônia'],
+  eventCity: ['cidade do evento', 'cidade evento'],
+  eventState: ['estado do evento', 'uf do evento', 'estado evento'],
+  notes: ['observacoes', 'observações', 'obs', 'notas', 'anotacoes', 'anotações', 'descricao', 'descrição', 'description', 'info', 'informacoes', 'informações'],
 };
 
 const EMAIL_REGEX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
@@ -54,7 +59,45 @@ Instagram:
 Endereço:
 Cidade:
 Estado:
-Observações:`;
+Data do evento:
+Horário:
+Local:
+Cidade do evento:
+Estado do evento:
+Descrição:`;
+
+function normalizeEventDate(value = '') {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  const brMatch = trimmed.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);
+  if (brMatch) {
+    const day = brMatch[1].padStart(2, '0');
+    const month = brMatch[2].padStart(2, '0');
+    let year = brMatch[3];
+    if (year.length === 2) year = `20${year}`;
+    return `${year}-${month}-${day}`;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+
+  return '';
+}
+
+function normalizeEventTime(value = '') {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  const timeMatch = trimmed.match(/^(\d{1,2})[:hH](\d{2})(?:\s*h)?$/);
+  if (timeMatch) {
+    const hours = String(parseInt(timeMatch[1], 10)).padStart(2, '0');
+    return `${hours}:${timeMatch[2]}`;
+  }
+
+  if (/^\d{2}:\d{2}$/.test(trimmed)) return trimmed;
+
+  return '';
+}
 
 function detectField(label) {
   const normalized = normalizeText(label);
@@ -179,6 +222,31 @@ function assignField(result, field, value) {
 
   if (field === 'state') {
     result.state = normalizeState(value);
+    return;
+  }
+
+  if (field === 'eventDate') {
+    result.eventDate = normalizeEventDate(value);
+    return;
+  }
+
+  if (field === 'eventTime') {
+    result.eventTime = normalizeEventTime(value);
+    return;
+  }
+
+  if (field === 'eventLocation') {
+    result.eventLocation = value;
+    return;
+  }
+
+  if (field === 'eventCity') {
+    result.eventCity = value;
+    return;
+  }
+
+  if (field === 'eventState') {
+    result.eventState = normalizeState(value);
     return;
   }
 
@@ -317,6 +385,24 @@ function extractFromLine(line, result, usedLines) {
     return true;
   }
 
+  if (!result.eventDate) {
+    const eventDate = normalizeEventDate(line);
+    if (eventDate) {
+      result.eventDate = eventDate;
+      usedLines.add(line);
+      return true;
+    }
+  }
+
+  if (!result.eventTime && /[:hH]/.test(line)) {
+    const eventTime = normalizeEventTime(line);
+    if (eventTime) {
+      result.eventTime = eventTime;
+      usedLines.add(line);
+      return true;
+    }
+  }
+
   return false;
 }
 
@@ -370,6 +456,11 @@ export function parseQuickClientText(text = '') {
     address: '',
     city: '',
     state: '',
+    eventDate: '',
+    eventTime: '',
+    eventLocation: '',
+    eventCity: '',
+    eventState: '',
     notes: '',
   };
 

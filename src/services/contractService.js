@@ -190,6 +190,7 @@ function buildContractDoc(data, client, totalAmount) {
     city: data.city?.trim() || '',
     state: data.state?.trim() || '',
     closingDate: data.closingDate ? Timestamp.fromDate(new Date(data.closingDate)) : null,
+    discountAmount: Number(data.discountAmount) || 0,
     totalAmount,
     entryPercent: Number(data.entryPercent) || 0,
     entryAmount: Number(data.entryAmount) || 0,
@@ -208,7 +209,9 @@ function buildContractDoc(data, client, totalAmount) {
 }
 
 export async function createContract(data, items, installments, client) {
-  const totalAmount = sumCents(items.map((i) => i.amount));
+  const subtotalAmount = sumCents(items.map((i) => i.amount));
+  const discountAmount = Number(data.discountAmount) || 0;
+  const totalAmount = Math.max(0, subtotalAmount - discountAmount);
   const batch = writeBatch(db);
   const contractRef = doc(collection(db, COLLECTION));
 
@@ -250,7 +253,9 @@ export async function createContract(data, items, installments, client) {
 }
 
 export async function updateContract(contractId, data, items, client, existingContract) {
-  const totalAmount = sumCents(items.map((i) => i.amount));
+  const subtotalAmount = sumCents(items.map((i) => i.amount));
+  const discountAmount = Number(data.discountAmount) || 0;
+  const totalAmount = Math.max(0, subtotalAmount - discountAmount);
   const receivedAmount = existingContract?.receivedAmount || 0;
   const batch = writeBatch(db);
   const contractRef = doc(db, COLLECTION, contractId);

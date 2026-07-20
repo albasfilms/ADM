@@ -3,6 +3,16 @@ import {
   createContract,
   updateContract,
 } from '../services/contractService.js';
+import { createClient, getClientById, getClientDisplayName } from '../services/clientService.js';
+import {
+  NEW_CLIENT_ID,
+  isNewClientSelected,
+  buildInlineClientFormSection,
+  getClientFormData,
+  showClientFormErrors,
+  bindContractFieldsFromClient,
+} from './clientForm.js';
+import { validateClientForm } from '../utils/validators.js';
 import {
   CONTRACT_STATUS,
   EVENT_TYPES,
@@ -50,6 +60,52 @@ import {
 } from '../utils/servicePricing.js';
 import { CONTRACT_ITEM_SERVICE_ORDER } from '../utils/contractServices.js';
 import { resolveContractEventType } from '../utils/contractEventType.js';
+
+function getItemsSubtotalCents(form) {
+  const items = collectItems(form);
+  return sumCents(items.map((item) => item.amount));
+}
+
+function isDiscountEnabled(form) {
+  return Boolean(form.querySelector('#contract-discount-enabled')?.checked);
+}
+
+function getDiscountCents(form) {
+  if (!isDiscountEnabled(form)) return 0;
+  return parseCurrencyInput(form.querySelector('[name="discountAmount"]')?.value || '');
+}
+
+function getContractTotalCents(form) {
+  return Math.max(0, getItemsSubtotalCents(form) - getDiscountCents(form));
+}
+
+function syncDiscountUI(form) {
+  const field = form.querySelector('#contract-discount-field');
+  const breakdown = form.querySelector('#contract-total-breakdown');
+  const enabled = isDiscountEnabled(form);
+
+  field?.classList.toggle('is-visible', enabled);
+  breakdown?.classList.toggle('is-visible', enabled);
+
+  if (!enabled) {
+    const discountInput = form.querySelector('[name="discountAmount"]');
+    if (discountInput) discountInput.value = '';
+  }
+
+  updateTotalDisplay(form);
+}
+
+function bindContractDiscountFields(form) {
+  form.querySelector('#contract-discount-enabled')?.addEventListener('change', () => {
+    syncDiscountUI(form);
+  });
+
+  form.querySelector('[name="discountAmount"]')?.addEventListener('input', () => {
+    updateTotalDisplay(form);
+  });
+
+  syncDiscountUI(form);
+}
 
 function getContractDefaults(contract) {
   if (contract) {
@@ -117,8 +173,7 @@ function syncInstallmentBreakdown(form) {
     return;
   }
 
-  const items = collectItems(form);
-  const totalCents = sumCents(items.map((item) => item.amount));
+  const totalCents = getContractTotalCents(form);
   const installmentCount = parseInt(form.querySelector('[name="installmentCount"]')?.value, 10) || 0;
   const entryAmount = parseCurrencyInput(form.querySelector('[name="entryAmount"]')?.value || '');
   const entryPercent = parseFloat(form.querySelector('[name="entryPercent"]')?.value) || 0;
@@ -173,19 +228,36 @@ function getSelectedPaymentPlanType(form) {
 }
 
 function setFieldVisibility(form, visibleFields) {
-  const map = {
-    entryPercent: '[name="entryPercent"]',
-    entryAmount: '[name="entryAmount"]',
-    entryPaymentMethod: '[name="entryPaymentMethod"]',
-    installmentCount: '[name="installmentCount"]',
-    firstDueDate: '[name="firstDueDate"]',
-    intervalMonths: '[name="installmentIntervalMonths"]',
-  };
-
-  Object.entries(map).forEach(([key, selector]) => {
-    const field = form.querySelector(selector)?.closest('.form-field');
-    if (field) field.hidden = !visibleFields.includes(key);
+  form.querySelectorAll('[data-payment-field]').forEach((field) => {
+    const key = field.dataset.paymentField;
+    field.classList.toggle('is-visible', visibleFields.includes(key));
   });
+}
+
+function updatePaymentFieldLabels(form, planType) {
+  const entryAmountLabel = form.querySelector('[data-payment-label="entryAmount"]');
+  const entryPaymentLabel = form.querySelector('[data-payment-label="entryPaymentMethod"]');
+  const installmentLabel = form.querySelector('#installment-count-label');
+  const firstDueLabel = form.querySelector('#first-due-label');
+
+  if (planType === PAYMENT_PLAN_TYPES.CASH) {
+    if (entryAmountLabel) entryAmountLabel.textContent = 'Valor do pagamento';
+    if (entryPaymentLabel) entryPaymentLabel.textContent = 'Forma de pagamento';
+    if (firstDueLabel) firstDueLabel.textContent = 'Data do pagamento';
+    return;
+  }
+
+  if (entryAmountLabel) entryAmountLabel.textContent = 'Valor da entrada';
+  if (entryPaymentLabel) entryPaymentLabel.textContent = 'Forma de pagamento da entrada';
+
+  if (planType === PAYMENT_PLAN_TYPES.CREDIT_CARD) {
+    if (installmentLabel) installmentLabel.textContent = 'Parcelas no cartão (até 10x)';
+    if (firstDueLabel) firstDueLabel.textContent = 'Primeira parcela no cartão';
+    return;
+  }
+
+  if (installmentLabel) installmentLabel.textContent = 'Nº de parcelas antes do casamento';
+  if (firstDueLabel) firstDueLabel.textContent = 'Primeiro vencimento';
 }
 
 function syncFirstDueFromEvent(form) {
@@ -239,7 +311,9 @@ function applyPaymentPlanPreset(form) {
       'firstDueDate',
       'intervalMonths',
     ]);
+    updatePaymentFieldLabels(form, planType);
     if (entryPercent) entryPercent.value = '30';
+    if (entryAmount) entryAmount.readOnly = false;
     if (entryPaymentMethod) entryPaymentMethod.value = PAYMENT_METHODS.PIX;
     if (installmentCount) {
       installmentCount.value = '4';
@@ -256,31 +330,35 @@ function applyPaymentPlanPreset(form) {
   }
 
   if (planType === PAYMENT_PLAN_TYPES.CREDIT_CARD) {
-    setFieldVisibility(form, ['installmentCount', 'firstDueDate']);
+    setFieldVisibility(form, ['installmentCount']);
+    updatePaymentFieldLabels(form, planType);
     if (entryPercent) entryPercent.value = '0';
-    if (entryAmount) entryAmount.value = '';
+    if (entryAmount) {
+      entryAmount.value = '';
+      entryAmount.readOnly = false;
+    }
     if (entryPaymentMethod) entryPaymentMethod.value = PAYMENT_METHODS.CREDIT_CARD;
     if (installmentCount) {
       installmentCount.value = '10';
       installmentCount.min = '1';
       installmentCount.max = '10';
     }
-    if (installmentLabel) installmentLabel.textContent = 'Parcelas no cartão (até 10x)';
-    if (firstDueLabel) firstDueLabel.textContent = 'Primeira parcela no cartão';
-    if (firstDueDate) {
-      firstDueDate.readOnly = false;
-      if (!firstDueDate.value) firstDueDate.value = toDateInputString(addMonths(closingDate, 1));
-    }
     if (hint) hint.hidden = true;
     syncInstallmentBreakdown(form);
     return;
   }
 
-  setFieldVisibility(form, ['entryPaymentMethod']);
+  setFieldVisibility(form, ['entryAmount', 'firstDueDate', 'entryPaymentMethod']);
+  updatePaymentFieldLabels(form, PAYMENT_PLAN_TYPES.CASH);
   if (entryPercent) entryPercent.value = '100';
   if (installmentCount) installmentCount.value = '0';
   if (entryPaymentMethod && !entryPaymentMethod.value) {
     entryPaymentMethod.value = PAYMENT_METHODS.PIX;
+  }
+  if (entryAmount) entryAmount.readOnly = true;
+  if (firstDueDate) {
+    firstDueDate.readOnly = false;
+    if (!firstDueDate.value) firstDueDate.value = toDateInputString(closingDate);
   }
   if (hint) hint.hidden = true;
   updateTotalDisplay(form);
@@ -298,7 +376,7 @@ function buildPaymentPlan(form, data, totalCents) {
   if (planType === PAYMENT_PLAN_TYPES.CREDIT_CARD) {
     return plan.map((inst) => ({
       ...inst,
-      description: inst.number === 0 ? inst.description : `Cartão ${inst.number}/${params.installmentCount}`,
+      description: `Cartão de crédito em ${params.cardInstallmentCount || params.installmentCount || 1}x — ${formatCurrency(inst.expectedAmount)}`,
     }));
   }
 
@@ -492,9 +570,16 @@ function collectItems(form) {
 
 function getFormData(form, existingContract = null) {
   const getValue = (name) => form.querySelector(`[name="${name}"]`)?.value;
+  const clientMode = form.querySelector('[name="clientMode"]:checked')?.value;
+  const clientId =
+    clientMode === 'new'
+      ? NEW_CLIENT_ID
+      : clientMode === 'existing'
+        ? getValue('existingClientId')
+        : getValue('clientId');
 
   return {
-    clientId: getValue('clientId'),
+    clientId,
     title: getValue('title'),
     eventType: getValue('eventType') || resolveContractEventType(existingContract || {}),
     description: getValue('description'),
@@ -516,20 +601,34 @@ function getFormData(form, existingContract = null) {
       (existingContract?.firstDueDate ? toDateInputValue(existingContract.firstDueDate) : ''),
     installmentIntervalMonths:
       getValue('installmentIntervalMonths') ?? existingContract?.installmentIntervalMonths ?? 1,
+    discountEnabled: isDiscountEnabled(form),
+    discountAmount: getDiscountCents(form),
     driveLink: getValue('driveLink'),
     contractLink: getValue('contractLink'),
-    notes: getValue('notes'),
+    notes: '',
     status: getValue('status') || getContractFormStatus(existingContract),
   };
 }
 
-function validateContractForm(data, items, { isEdit = false } = {}) {
+function validateContractForm(data, items, { isEdit = false, isNewClient = false } = {}) {
   const errors = {};
-  if (!data.clientId) errors.clientId = 'Selecione um cliente.';
+  if (!isNewClient && !data.clientId) errors.clientId = 'Selecione um cliente.';
   if (!data.title?.trim()) errors.title = 'O título é obrigatório.';
   if (items.length === 0) errors.items = 'Adicione pelo menos um serviço.';
   if (items.some((i) => i.amount <= 0)) errors.items = 'Todos os serviços precisam ter valor.';
-  const total = sumCents(items.map((i) => i.amount));
+
+  const subtotal = sumCents(items.map((i) => i.amount));
+  const discount = data.discountEnabled ? Number(data.discountAmount) || 0 : 0;
+
+  if (data.discountEnabled && discount <= 0) {
+    errors.discountAmount = 'Informe o valor do desconto.';
+  }
+
+  if (data.discountEnabled && discount >= subtotal) {
+    errors.discountAmount = 'O desconto deve ser menor que o subtotal dos serviços.';
+  }
+
+  const total = Math.max(0, subtotal - discount);
   if (total <= 0) errors.items = 'O valor total deve ser maior que zero.';
   if (data.entryPercent && (data.entryPercent < 0 || data.entryPercent > 100)) {
     errors.entryPercent = 'Percentual deve ser entre 0 e 100.';
@@ -563,10 +662,17 @@ function showFormErrors(form, errors) {
 }
 
 function updateTotalDisplay(form) {
-  const items = collectItems(form);
-  const total = sumCents(items.map((i) => i.amount));
+  const subtotal = getItemsSubtotalCents(form);
+  const discount = getDiscountCents(form);
+  const total = Math.max(0, subtotal - discount);
   const totalEl = form.querySelector('#contract-total');
+  const subtotalEl = form.querySelector('#contract-subtotal');
+  const discountEl = form.querySelector('#contract-discount-display');
+
   if (totalEl) totalEl.textContent = formatCurrency(total);
+  if (subtotalEl) subtotalEl.textContent = formatCurrency(subtotal);
+  if (discountEl) discountEl.textContent = formatCurrency(discount);
+
   syncEntryFromPercent(form, total);
   syncInstallmentBreakdown(form);
   return total;
@@ -580,8 +686,19 @@ function syncEntryFromPercent(form, totalCents) {
   const planType = getSelectedPaymentPlanType(form);
   if (planType === PAYMENT_PLAN_TYPES.CREDIT_CARD) {
     entryInput.value = '';
+    entryInput.readOnly = false;
     return;
   }
+
+  if (planType === PAYMENT_PLAN_TYPES.CASH) {
+    if (totalCents > 0) {
+      entryInput.value = formatCurrencyInput(totalCents);
+    }
+    entryInput.readOnly = true;
+    return;
+  }
+
+  entryInput.readOnly = false;
 
   const percent = parseFloat(percentInput.value) || 0;
   if (percent > 0 && totalCents > 0) {
@@ -696,6 +813,101 @@ function openPreviewModal({ installments, totalCents, onConfirm }) {
   renderIcons(body);
 }
 
+async function resolveClientForContract(form, clientInlineForm, clientPanel, clients, data) {
+  if (isNewClientSelected(data.clientId)) {
+    const clientData = getClientFormData(clientInlineForm);
+    const clientErrors = validateClientForm(clientData);
+
+    if (Object.keys(clientErrors).length > 0) {
+      showClientFormErrors(clientInlineForm, clientErrors);
+      clientPanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      throw new Error('client-validation');
+    }
+
+    const clientId = await createClient(clientData);
+    data.clientId = clientId;
+    const client = await getClientById(clientId);
+    if (!client) {
+      showToast('Cliente criado, mas não foi possível carregá-lo.', 'error');
+      throw new Error('client-not-found');
+    }
+    return client;
+  }
+
+  const client = clients.find((c) => c.id === data.clientId);
+  if (!client) {
+    showToast('Cliente não encontrado.', 'error');
+    throw new Error('client-not-found');
+  }
+
+  return client;
+}
+
+function showContractClientIdError(contentWrapper, message = '') {
+  const errorEl = contentWrapper.querySelector('#existing-client-field [data-error="clientId"]');
+  const select = contentWrapper.querySelector('#existing-client-select');
+
+  if (!message) {
+    if (errorEl) {
+      errorEl.hidden = true;
+      errorEl.textContent = '';
+    }
+    select?.classList.remove('form-field__input--error');
+    return;
+  }
+
+  if (errorEl) {
+    errorEl.textContent = message;
+    errorEl.hidden = false;
+  }
+  select?.classList.add('form-field__input--error');
+  contentWrapper.querySelector('#existing-client-field')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function buildClientModeSection(clients) {
+  const section = document.createElement('div');
+  section.className = 'form-section contract-client-mode';
+  section.id = 'contract-client-mode';
+
+  const existingClientOptions = clients
+    .map(
+      (c) =>
+        `<option value="${c.id}">${escapeHtml(getClientDisplayName(c))}</option>`
+    )
+    .join('');
+
+  const hasExistingClients = clients.length > 0;
+
+  section.innerHTML = `
+    <h3 class="form-section__title">Cliente</h3>
+    <div class="contract-client-mode__choices">
+      <label class="form-radio">
+        <input type="radio" name="clientMode" value="new" checked />
+        Cadastrar novo cliente
+      </label>
+      <label class="form-radio ${hasExistingClients ? '' : 'form-radio--disabled'}">
+        <input type="radio" name="clientMode" value="existing" ${hasExistingClients ? '' : 'disabled'} />
+        Usar cliente cadastrado
+      </label>
+    </div>
+    <div class="form-field form-field--full" id="existing-client-field">
+      <label class="form-field__label" for="existing-client-select">Selecione o cliente *</label>
+      <select class="form-field__input" id="existing-client-select" name="existingClientId">
+        <option value="">Selecione um cliente</option>
+        ${existingClientOptions}
+      </select>
+      <span class="form-field__error" data-error="clientId" hidden></span>
+    </div>
+    ${
+      hasExistingClients
+        ? ''
+        : '<p class="text-muted contract-client-mode__hint">Nenhum cliente cadastrado ainda. Use a opção acima para cadastrar agora.</p>'
+    }
+  `;
+
+  return section;
+}
+
 export function openContractFormModal({
   clients,
   contract = null,
@@ -705,15 +917,21 @@ export function openContractFormModal({
 }) {
   const isEdit = Boolean(contract);
   const defaults = getContractDefaults(contract);
+  const contentWrapper = document.createElement('div');
+  contentWrapper.className = 'contract-form-wrapper';
+
+  let clientPanel = null;
+  let clientInlineForm = null;
+
   const form = document.createElement('form');
   form.id = 'contract-form';
   form.className = 'contract-form';
   form.noValidate = true;
 
-  const clientOptions = clients
+  const existingClientOptions = clients
     .map(
       (c) =>
-        `<option value="${c.id}" ${contract?.clientId === c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`
+        `<option value="${c.id}" ${contract?.clientId === c.id ? 'selected' : ''}>${escapeHtml(getClientDisplayName(c))}</option>`
     )
     .join('');
 
@@ -721,19 +939,14 @@ export function openContractFormModal({
     items.length > 0
       ? items
       : [{ serviceType: SERVICE_TYPES.STORYMAKER, description: SERVICE_TYPE_LABELS[SERVICE_TYPES.STORYMAKER], amount: 0 }];
+  const initialSubtotalCents = sumCents(initialItems.map((item) => item.amount));
+  const initialDiscountAmount = contract?.discountAmount || 0;
+  const initialDiscountEnabled = initialDiscountAmount > 0;
+  const initialTotalCents = Math.max(0, initialSubtotalCents - initialDiscountAmount);
 
   form.innerHTML = `
-    <div class="form-section">
-      <h3 class="form-section__title">Dados do contrato</h3>
+    <div class="form-section contract-form__overview">
       <div class="form-grid">
-        <div class="form-field form-field--full">
-          <label class="form-field__label">Cliente *</label>
-          <select class="form-field__input" name="clientId" required>
-            <option value="">Selecione um cliente</option>
-            ${clientOptions}
-          </select>
-          <span class="form-field__error" data-error="clientId" hidden></span>
-        </div>
         <div class="form-field">
           <label class="form-field__label">Título do contrato *</label>
           <input class="form-field__input" name="title" value="${escapeHtml(contract?.title || '')}" placeholder="Ex: Casamento Ana e Rafael" />
@@ -743,9 +956,33 @@ export function openContractFormModal({
           <label class="form-field__label">Modelo do evento</label>
           <select class="form-field__input" name="eventType">${eventTypeOptions(resolveContractEventType(contract || {}))}</select>
         </div>
+      </div>
+    </div>
+    ${
+      isEdit
+        ? `
+    <div class="form-section">
+      <h3 class="form-section__title">Cliente</h3>
+      <div class="form-grid">
+        <div class="form-field form-field--full">
+          <label class="form-field__label">Cliente *</label>
+          <select class="form-field__input" name="clientId" required>
+            <option value="">Selecione um cliente</option>
+            ${existingClientOptions}
+          </select>
+          <span class="form-field__error" data-error="clientId" hidden></span>
+        </div>
+      </div>
+    </div>
+    `
+        : ''
+    }
+    <div class="form-section">
+      <h3 class="form-section__title">Dados do contrato</h3>
+      <div class="form-grid">
         <div class="form-field form-field--full">
           <label class="form-field__label">Descrição</label>
-          <textarea class="form-field__input form-field__textarea" name="description" rows="2">${escapeHtml(contract?.description || '')}</textarea>
+          <textarea class="form-field__input form-field__textarea" name="description" rows="2">${escapeHtml(contract?.description || contract?.notes || '')}</textarea>
         </div>
         <input type="hidden" name="status" value="${getContractFormStatus(contract)}" />
       </div>
@@ -799,8 +1036,36 @@ export function openContractFormModal({
       </div>
       <span class="form-field__error" data-error="items" hidden></span>
       <div class="contract-total">
-        <span>Total do contrato</span>
-        <strong id="contract-total">${formatCurrency(sumCents(initialItems.map((i) => i.amount)))}</strong>
+        <div class="contract-total__summary">
+          <span>Total do contrato</span>
+          <strong id="contract-total">${formatCurrency(initialTotalCents)}</strong>
+        </div>
+        <div class="contract-total__discount">
+          <label class="form-checkbox" for="contract-discount-enabled">
+            <input
+              type="checkbox"
+              id="contract-discount-enabled"
+              name="discountEnabled"
+              ${initialDiscountEnabled ? 'checked' : ''}
+            />
+            Dar desconto
+          </label>
+          <div class="contract-total__discount-field${initialDiscountEnabled ? ' is-visible' : ''}" id="contract-discount-field">
+            <label class="form-field__label" for="contract-discount-amount">Valor do desconto</label>
+            <input
+              class="form-field__input currency-input"
+              id="contract-discount-amount"
+              name="discountAmount"
+              value="${initialDiscountAmount ? formatCurrencyInput(initialDiscountAmount) : ''}"
+              placeholder="0,00"
+            />
+            <span class="form-field__error" data-error="discountAmount" hidden></span>
+          </div>
+        </div>
+        <div class="contract-total__breakdown${initialDiscountEnabled ? ' is-visible' : ''}" id="contract-total-breakdown">
+          <span>Subtotal: <strong id="contract-subtotal">${formatCurrency(initialSubtotalCents)}</strong></span>
+          <span>Desconto: -<strong id="contract-discount-display">${formatCurrency(initialDiscountAmount)}</strong></span>
+        </div>
       </div>
     </div>
 
@@ -816,33 +1081,33 @@ export function openContractFormModal({
             ${paymentPlanTypeOptions()}
           </select>
         </div>
-        <div class="form-field">
+        <div class="form-field payment-plan-field is-visible" data-payment-field="entryPercent">
           <label class="form-field__label">Percentual de entrada (%)</label>
           <input class="form-field__input" type="number" name="entryPercent" min="0" max="100" step="1"
             value="30" />
           <span class="form-field__error" data-error="entryPercent" hidden></span>
         </div>
-        <div class="form-field">
-          <label class="form-field__label">Valor da entrada</label>
+        <div class="form-field payment-plan-field is-visible" data-payment-field="entryAmount">
+          <label class="form-field__label" data-payment-label="entryAmount">Valor da entrada</label>
           <input class="form-field__input currency-input" name="entryAmount"
             title="Informe o valor da entrada ou use o percentual acima" />
         </div>
-        <div class="form-field">
-          <label class="form-field__label">Forma de pagamento da entrada</label>
+        <div class="form-field payment-plan-field is-visible" data-payment-field="entryPaymentMethod">
+          <label class="form-field__label" data-payment-label="entryPaymentMethod">Forma de pagamento da entrada</label>
           <select class="form-field__input" name="entryPaymentMethod">${paymentMethodOptions(PAYMENT_METHODS.PIX)}</select>
         </div>
-        <div class="form-field">
+        <div class="form-field payment-plan-field is-visible" data-payment-field="installmentCount">
           <label class="form-field__label" id="installment-count-label">Nº de parcelas antes do casamento</label>
           <input class="form-field__input" type="number" name="installmentCount" min="1" max="24" value="4" />
           <p class="form-field__hint" id="installment-breakdown-hint" hidden></p>
           <span class="form-field__error" data-error="installmentCount" hidden></span>
         </div>
-        <div class="form-field">
+        <div class="form-field payment-plan-field is-visible" data-payment-field="firstDueDate">
           <label class="form-field__label" id="first-due-label">Primeiro vencimento</label>
           <input class="form-field__input" type="date" name="firstDueDate" />
           <p class="form-field__hint" id="first-due-hint"></p>
         </div>
-        <div class="form-field">
+        <div class="form-field payment-plan-field is-visible" data-payment-field="intervalMonths">
           <label class="form-field__label">Intervalo (meses)</label>
           <input class="form-field__input" type="number" name="installmentIntervalMonths" min="1" max="12" value="1" />
         </div>
@@ -855,7 +1120,7 @@ export function openContractFormModal({
     }
 
     <div class="form-section">
-      <h3 class="form-section__title">Links e observações</h3>
+      <h3 class="form-section__title">Links</h3>
       <div class="form-grid">
         <div class="form-field form-field--full">
           <label class="form-field__label">Pasta no Google Drive</label>
@@ -865,13 +1130,22 @@ export function openContractFormModal({
           <label class="form-field__label">Contrato assinado</label>
           <input class="form-field__input" type="url" name="contractLink" value="${escapeHtml(contract?.contractLink || '')}" placeholder="https://..." />
         </div>
-        <div class="form-field form-field--full">
-          <label class="form-field__label">Observações</label>
-          <textarea class="form-field__input form-field__textarea" name="notes" rows="2">${escapeHtml(contract?.notes || '')}</textarea>
-        </div>
       </div>
     </div>
   `;
+
+  contentWrapper.appendChild(form);
+
+  if (!isEdit) {
+    const overviewSection = form.querySelector('.contract-form__overview');
+    const clientModeSection = buildClientModeSection(clients);
+    const inlineClient = buildInlineClientFormSection(form);
+    clientPanel = inlineClient.section;
+    clientInlineForm = inlineClient.form;
+
+    overviewSection.insertAdjacentElement('afterend', clientModeSection);
+    clientModeSection.insertAdjacentElement('afterend', clientPanel);
+  }
 
   let itemIndex = initialItems.length;
 
@@ -884,15 +1158,46 @@ export function openContractFormModal({
         ? '<button type="button" class="btn btn--secondary" data-action="preview">Gerar prévia de parcelas</button>'
         : ''
     }
-    <button type="submit" class="btn btn--primary" form="contract-form">${isEdit ? 'Salvar alterações' : 'Salvar contrato'}</button>
+    <button type="submit" class="btn btn--primary" form="contract-form">${isEdit ? 'Salvar alterações' : 'Salvar cliente e contrato'}</button>
   `;
 
   const { close } = createModal({
     title: isEdit ? 'Editar contrato' : 'Novo contrato',
-    content: form,
+    content: contentWrapper,
     footer,
     size: 'lg',
   });
+
+  const updateClientModeUI = () => {
+    if (isEdit) return;
+
+    const mode = contentWrapper.querySelector('[name="clientMode"]:checked')?.value || 'new';
+    const isNew = mode === 'new';
+
+    if (clientPanel) {
+      clientPanel.classList.toggle('is-visible', isNew);
+    }
+
+    const existingField = contentWrapper.querySelector('#existing-client-field');
+    if (existingField) {
+      existingField.classList.toggle('is-visible', !isNew);
+    }
+
+    const submitBtn = footer.querySelector('[type="submit"]');
+    if (submitBtn) {
+      submitBtn.textContent = isNew ? 'Salvar cliente e contrato' : 'Salvar contrato';
+    }
+  };
+
+  contentWrapper.querySelectorAll('[name="clientMode"]').forEach((input) => {
+    input.addEventListener('change', updateClientModeUI);
+  });
+  updateClientModeUI();
+
+  if (clientInlineForm) {
+    bindContractFieldsFromClient(form, clientInlineForm);
+    renderIcons(clientPanel);
+  }
 
   form.querySelectorAll('.currency-input').forEach(bindCurrencyInput);
 
@@ -931,6 +1236,7 @@ export function openContractFormModal({
   bindItemEvents();
   bindServiceItemPricing(form);
   bindStateCityFields(form);
+  bindContractDiscountFields(form);
   if (!isEdit) {
     applyPaymentPlanPreset(form);
     syncServicePrices(form);
@@ -947,11 +1253,11 @@ export function openContractFormModal({
   });
 
   form.querySelector('[name="closingDate"]')?.addEventListener('change', () => {
-    if (getSelectedPaymentPlanType(form) === PAYMENT_PLAN_TYPES.CREDIT_CARD) {
+    if (getSelectedPaymentPlanType(form) === PAYMENT_PLAN_TYPES.CASH) {
       const firstDueDate = form.querySelector('[name="firstDueDate"]');
       const closingDate = parseFormDate(form.querySelector('[name="closingDate"]')?.value);
       if (firstDueDate && closingDate && !firstDueDate.value) {
-        firstDueDate.value = toDateInputString(addMonths(closingDate, 1));
+        firstDueDate.value = toDateInputString(closingDate);
       }
     }
   });
@@ -974,26 +1280,52 @@ export function openContractFormModal({
   footer.querySelector('[data-action="preview"]')?.addEventListener('click', () => {
     const data = getFormData(form);
     const itemsCollected = collectItems(form);
-    const errors = validateContractForm(data, itemsCollected);
+    const isNewClient = isNewClientSelected(data.clientId);
+    const errors = validateContractForm(data, itemsCollected, { isNewClient });
+
     if (Object.keys(errors).length > 0) {
       showFormErrors(form, errors);
+      showContractClientIdError(contentWrapper, errors.clientId);
       return;
     }
 
-    const totalCents = sumCents(itemsCollected.map((i) => i.amount));
-    const plan = buildPaymentPlan(form, data, totalCents);
+    showContractClientIdError(contentWrapper);
 
-    const client = clients.find((c) => c.id === data.clientId);
+    if (isNewClient) {
+      const clientErrors = validateClientForm(getClientFormData(clientInlineForm));
+      if (Object.keys(clientErrors).length > 0) {
+        showClientFormErrors(clientInlineForm, clientErrors);
+        clientPanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+    }
+
+    const totalCents = getContractTotalCents(form);
+    const plan = buildPaymentPlan(form, data, totalCents);
 
     openPreviewModal({
       installments: plan,
       totalCents,
       onConfirm: async (confirmedPlan) => {
-        const contractId = await createContract(data, itemsCollected, confirmedPlan, client);
-        showToast('Contrato criado com sucesso.', 'success');
-        onCreated?.(contractId);
-        onSaved?.();
-        close();
+        try {
+          const client = await resolveClientForContract(
+            form,
+            clientInlineForm,
+            clientPanel,
+            clients,
+            data
+          );
+          const contractId = await createContract(data, itemsCollected, confirmedPlan, client);
+          showToast('Cliente e contrato criados com sucesso.', 'success');
+          onCreated?.(contractId);
+          onSaved?.();
+          close();
+        } catch (error) {
+          if (error.message !== 'client-validation' && error.message !== 'client-not-found') {
+            console.error('[Contracts] Erro ao criar contrato:', error);
+            showToast('Não foi possível salvar o contrato.', 'error');
+          }
+        }
       },
     });
   });
@@ -1005,18 +1337,24 @@ export function openContractFormModal({
     try {
       const data = getFormData(form, contract);
       const itemsCollected = collectItems(form);
-      const errors = validateContractForm(data, itemsCollected, { isEdit });
+      const isNewClient = isNewClientSelected(data.clientId);
+      const errors = validateContractForm(data, itemsCollected, { isEdit, isNewClient });
 
       if (Object.keys(errors).length > 0) {
         showFormErrors(form, errors);
+        showContractClientIdError(contentWrapper, errors.clientId);
         return;
       }
 
-      const client = clients.find((c) => c.id === data.clientId);
-      if (!client) {
-        showToast('Cliente não encontrado.', 'error');
-        return;
-      }
+      showContractClientIdError(contentWrapper);
+
+      const client = await resolveClientForContract(
+        form,
+        clientInlineForm,
+        clientPanel,
+        clients,
+        data
+      );
 
       submitBtn.disabled = true;
       submitBtn.classList.add('btn--loading');
@@ -1025,10 +1363,10 @@ export function openContractFormModal({
         await updateContract(contract.id, data, itemsCollected, client, contract);
         showToast('Contrato atualizado.', 'success');
       } else {
-        const totalCents = sumCents(itemsCollected.map((i) => i.amount));
+        const totalCents = getContractTotalCents(form);
         const plan = buildPaymentPlan(form, data, totalCents);
         const contractId = await createContract(data, itemsCollected, plan, client);
-        showToast('Contrato criado com sucesso.', 'success');
+        showToast('Cliente e contrato criados com sucesso.', 'success');
         close();
         onSaved?.();
         onCreated?.(contractId);

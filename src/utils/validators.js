@@ -97,13 +97,11 @@ export function validateClientForm(data) {
     errors.name = 'O nome é obrigatório.';
   }
 
-  if (!data.personType) {
-    errors.personType = 'Selecione o tipo de pessoa.';
-  }
+  const personType = data.personType || PERSON_TYPES.INDIVIDUAL;
 
-  if (data.document && !isValidDocument(data.document, data.personType)) {
+  if (data.document && !isValidDocument(data.document, personType)) {
     errors.document =
-      data.personType === PERSON_TYPES.COMPANY
+      personType === PERSON_TYPES.COMPANY
         ? 'CNPJ inválido.'
         : 'CPF inválido.';
   }
@@ -122,7 +120,7 @@ export function validateClientForm(data) {
 
   const isCouple = data.isCouple === true || data.isCouple === 'true';
 
-  if (isCouple && data.personType !== PERSON_TYPES.COMPANY) {
+  if (isCouple && personType !== PERSON_TYPES.COMPANY) {
     if (!data.partnerName?.trim()) {
       errors.partnerName = 'Informe o nome completo do segundo noivo(a).';
     }

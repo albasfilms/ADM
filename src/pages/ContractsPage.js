@@ -220,10 +220,6 @@ function getContractIdFromPath() {
 async function openNewContractModal(onSaved) {
   try {
     const clients = await getActiveClients();
-    if (clients.length === 0) {
-      showToast('Cadastre um cliente ativo antes de criar contratos.', 'error');
-      return;
-    }
     openContractFormModal({
       clients,
       onSaved,
@@ -365,6 +361,11 @@ async function renderContractDetail(container, contractId) {
               <div class="detail-list__item"><dt>Local</dt><dd>${contract.eventLocation || '—'}</dd></div>
               <div class="detail-list__item"><dt>Cidade</dt><dd>${contract.city ? `${contract.city}${contract.state ? ` / ${contract.state}` : ''}` : '—'}</dd></div>
               <div class="detail-list__item"><dt>Fechamento</dt><dd>${formatDate(contract.closingDate)}</dd></div>
+              ${
+                contract.description || contract.notes
+                  ? `<div class="detail-list__item"><dt>Descrição</dt><dd>${escapeHtml(contract.description || contract.notes)}</dd></div>`
+                  : ''
+              }
             </dl>
           </div>
         </div>
@@ -374,6 +375,11 @@ async function renderContractDetail(container, contractId) {
           <div class="card__body">
             <dl class="detail-list">
               <div class="detail-list__item"><dt>Valor total</dt><dd><strong>${formatCurrency(contract.totalAmount)}</strong></dd></div>
+              ${
+                contract.discountAmount
+                  ? `<div class="detail-list__item"><dt>Desconto</dt><dd>- ${formatCurrency(contract.discountAmount)}</dd></div>`
+                  : ''
+              }
               <div class="detail-list__item"><dt>Recebido</dt><dd>${formatCurrency(contract.receivedAmount)}</dd></div>
               <div class="detail-list__item"><dt>Pendente</dt><dd>${formatCurrency(contract.pendingAmount)}</dd></div>
               <div class="detail-list__item"><dt>Vencido</dt><dd>${formatCurrency(contract.overdueAmount)}</dd></div>
@@ -477,15 +483,14 @@ async function renderContractDetail(container, contractId) {
         </div>
 
         ${
-          contract.driveLink || contract.contractLink || contract.notes
+          contract.driveLink || contract.contractLink
             ? `
         <div class="card detail-grid__full">
-          <div class="card__header"><h3 class="card__title">Links e observações</h3></div>
+          <div class="card__header"><h3 class="card__title">Links</h3></div>
           <div class="card__body">
             <dl class="detail-list">
               ${contract.driveLink ? `<div class="detail-list__item"><dt>Google Drive</dt><dd><a href="${escapeHtml(contract.driveLink)}" target="_blank" rel="noopener" class="link">Abrir pasta</a></dd></div>` : ''}
               ${contract.contractLink ? `<div class="detail-list__item"><dt>Contrato assinado</dt><dd><a href="${escapeHtml(contract.contractLink)}" target="_blank" rel="noopener" class="link">Ver contrato</a></dd></div>` : ''}
-              ${contract.notes ? `<div class="detail-list__item"><dt>Observações</dt><dd>${escapeHtml(contract.notes)}</dd></div>` : ''}
             </dl>
           </div>
         </div>

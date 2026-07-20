@@ -35,23 +35,25 @@ export function getPaymentPlanParams({ planType, totalCents, data }) {
   const firstDueFromForm = parseFormDate(data.firstDueDate);
 
   if (planType === PAYMENT_PLAN_TYPES.CASH) {
+    const paymentDate = firstDueFromForm || closingDate;
     return {
       entryPercent: 100,
       entryAmountCents: totalCents,
       installmentCount: 0,
-      firstDueDate: closingDate,
+      firstDueDate: paymentDate,
       intervalMonths: 1,
-      entryDueDate: closingDate,
+      entryDueDate: paymentDate,
     };
   }
 
   if (planType === PAYMENT_PLAN_TYPES.CREDIT_CARD) {
-    const installmentCount = Math.min(10, Math.max(1, parseInt(data.installmentCount, 10) || 10));
+    const cardInstallmentCount = Math.min(10, Math.max(1, parseInt(data.installmentCount, 10) || 10));
     return {
       entryPercent: 0,
       entryAmountCents: null,
-      installmentCount,
-      firstDueDate: firstDueFromForm || addMonths(closingDate, 1),
+      installmentCount: 0,
+      cardInstallmentCount,
+      firstDueDate: closingDate,
       intervalMonths: 1,
       entryDueDate: closingDate,
     };
