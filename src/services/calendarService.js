@@ -17,7 +17,7 @@ import { toJsDate, getInstallmentRemaining } from '../utils/installmentStatus.js
 import { toDateInputValue } from '../utils/dates.js';
 import { getCurrentUser } from '../appState.js';
 import { onlyDigits } from '../utils/validators.js';
-import { getInstallmentsForContracts } from './contractService.js';
+import { getInstallmentsForContracts, getContractItems } from './contractService.js';
 import { getCached, invalidateCache, invalidateCacheByPrefix } from '../utils/dataCache.js';
 
 const SETTINGS_REF = doc(db, 'settings', 'calendar');
@@ -287,35 +287,17 @@ export function groupPendingPaymentsByDate(pendingPayments = []) {
   return map;
 }
 
-async function loadPreWeddingByDate(contracts) {
-  const contractById = new Map(contracts.map((contract) => [contract.id, contract]));
-  const activeIds = new Set(contracts.map((contract) => contract.id));
+function appendPreWeddingSession(map, contract, item) {
+  if (!item.preWeddingDate) return;
 
-  if (!activeIds.size) return {};
+  const dateKey = toDateKey(item.preWeddingDate);
+  if (!dateKey) return;
 
-  const snapshot = await getDocs(query(collectionGroup(db, 'items'), limit(3000)));
-  const map = new Map();
+  if (!map.has(dateKey)) map.set(dateKey, []);
+  map.get(dateKey).push({ contract, item });
+}
 
-  snapshot.docs.forEach((docSnap) => {
-    const contractId = docSnap.ref.parent.parent?.id;
-    if (!contractId || !activeIds.has(contractId)) return;
-
-    const item = docSnap.data();
-    if (!item.preWeddingDate) return;
-
-    const dateKey = toDateKey(item.preWeddingDate);
-    if (!dateKey) return;
-
-    const contract = contractById.get(contractId);
-    if (!contract) return;
-
-    if (!map.has(dateKey)) map.set(dateKey, []);
-    map.get(dateKey).push({
-      contract,
-      item: { id: docSnap.id, ...item },
-    });
-  });
-
+function sortPreWeddingMap(map) {
   map.forEach((sessions) => {
     sessions.sort((a, b) =>
       String(a.item.preWeddingTime || '').localeCompare(String(b.item.preWeddingTime || ''))
@@ -323,6 +305,49 @@ async function loadPreWeddingByDate(contracts) {
   });
 
   return Object.fromEntries(map);
+}
+
+async function loadPreWeddingByDateFromCollectionGroup(contractById) {
+  const snapshot = await getDocs(query(collectionGroup(db, 'items'), limit(3000)));
+  const map = new Map();
+
+  snapshot.docs.forEach((docSnap) => {
+    const contractId = docSnap.ref.parent.parent?.id;
+    if (!contractId || !contractById.has(contractId)) return;
+
+    appendPreWeddingSession(map, contractById.get(contractId), { id: docSnap.id, ...docSnap.data() });
+  });
+
+  return sortPreWeddingMap(map);
+}
+
+async function loadPreWeddingByDateFromContracts(contracts) {
+  const map = new Map();
+
+  await Promise.all(
+    contracts.map(async (contract) => {
+      const items = await getContractItems(contract.id);
+      items.forEach((item) => appendPreWeddingSession(map, contract, item));
+    })
+  );
+
+  return sortPreWeddingMap(map);
+}
+
+async function loadPreWeddingByDate(contracts) {
+  const contractById = new Map(contracts.map((contract) => [contract.id, contract]));
+
+  if (!contractById.size) return {};
+
+  try {
+    return await loadPreWeddingByDateFromCollectionGroup(contractById);
+  } catch (error) {
+    console.warn(
+      '[Calendar] Consulta em lote de pré wedding indisponível, usando fallback por contrato.',
+      error
+    );
+    return loadPreWeddingByDateFromContracts(contracts);
+  }
 }
 
 export async function getCalendarData() {
@@ -336,7 +361,13 @@ export async function getCalendarData() {
     const contracts = activeContracts.filter((contract) => contract.eventDate);
     const pendingPayments = await getPendingPayments(allContracts);
     const settings = await getCalendarSettings();
-    const preWeddingByDate = await loadPreWeddingByDate(activeContracts);
+    let preWeddingByDate = {};
+
+    try {
+      preWeddingByDate = await loadPreWeddingByDate(activeContracts);
+    } catch (error) {
+      console.warn('[Calendar] Não foi possível carregar datas de pré wedding.', error);
+    }
 
     return {
       contracts,

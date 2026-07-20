@@ -67,6 +67,10 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
+    match /{path=**}/items/{itemId} {
+      allow read, write: if isAuthenticated();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
