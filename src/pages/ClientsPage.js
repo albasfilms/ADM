@@ -109,8 +109,8 @@ async function renderClientDetail(container, clientId) {
         <i data-lucide="pencil" aria-hidden="true"></i> Editar
       </button>
       ${
-        client.whatsapp
-          ? `<a href="https://wa.me/55${client.whatsapp}" target="_blank" rel="noopener" class="btn btn--secondary">
+        client.whatsapp || client.phone
+          ? `<a href="https://wa.me/55${client.whatsapp || client.phone}" target="_blank" rel="noopener" class="btn btn--secondary">
               <i data-lucide="message-circle" aria-hidden="true"></i> WhatsApp
             </a>`
           : ''
@@ -156,8 +156,7 @@ async function renderClientDetail(container, clientId) {
               <div class="detail-list__item"><dt>${client.personType === PERSON_TYPES.COMPANY ? 'CNPJ' : 'CPF'}</dt><dd>${docFormatted}</dd></div>
               `
               }
-              <div class="detail-list__item"><dt>Telefone</dt><dd>${client.phone ? formatPhone(client.phone) : '—'}</dd></div>
-              <div class="detail-list__item"><dt>WhatsApp</dt><dd>${client.whatsapp ? formatPhone(client.whatsapp) : '—'}</dd></div>
+              <div class="detail-list__item"><dt>WhatsApp</dt><dd>${client.whatsapp || client.phone ? formatPhone(client.whatsapp || client.phone) : '—'}</dd></div>
               <div class="detail-list__item"><dt>E-mail</dt><dd>${client.email || '—'}</dd></div>
               <div class="detail-list__item"><dt>Instagram</dt><dd>${client.instagram || '—'}</dd></div>
             </dl>
@@ -343,7 +342,7 @@ async function loadClientsList(listContainer, paginationContainer) {
                 <div class="table-cell__secondary">${PERSON_TYPE_LABELS[client.personType] || ''}</div>
               </td>
               <td>
-                <div class="table-cell__primary">${client.phone ? formatPhone(client.phone) : '—'}</div>
+                <div class="table-cell__primary">${client.whatsapp || client.phone ? formatPhone(client.whatsapp || client.phone) : '—'}</div>
                 <div class="table-cell__secondary">${client.email || ''}</div>
               </td>
               <td>${client.city ? `${escapeHtml(client.city)}${client.state ? ` / ${client.state}` : ''}` : '—'}</td>

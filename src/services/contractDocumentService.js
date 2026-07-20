@@ -58,8 +58,8 @@ export function buildContractDocumentContext({ contract, client, items = [], ins
     partnerDocumentFormatted: client?.partnerDocument
       ? formatDocument(client.partnerDocument, PERSON_TYPES.INDIVIDUAL)
       : '—',
-    phoneFormatted: client?.phone ? formatPhone(client.phone) : '—',
-    whatsappFormatted: client?.whatsapp ? formatPhone(client.whatsapp) : '—',
+    phoneFormatted: client?.whatsapp || client?.phone ? formatPhone(client.whatsapp || client.phone) : '—',
+    whatsappFormatted: client?.whatsapp || client?.phone ? formatPhone(client.whatsapp || client.phone) : '—',
     email: formatOptional(client?.email),
     instagram: formatOptional(client?.instagram),
     address: formatOptional(client?.address),

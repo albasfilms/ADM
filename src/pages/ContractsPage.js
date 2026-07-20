@@ -441,6 +441,73 @@ async function renderContractDetail(container, contractId) {
         </div>
 
         <div class="card detail-grid__full">
+          <div class="card__header"><h3 class="card__title">Parcelas e pagamentos</h3></div>
+          <div class="card__body">
+            <div class="data-table-wrapper">
+              <table class="data-table">
+                <thead><tr><th>#</th><th>Descrição</th><th>Previsto</th><th>Pago</th><th>Vencimento</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                  ${installments
+                    .map((inst) => {
+                      const remaining = getInstallmentRemaining(inst);
+                      const canPay =
+                        remaining > 0 &&
+                        inst.status !== INSTALLMENT_STATUS.CANCELLED &&
+                        contract.status !== CONTRACT_STATUS.CANCELLED;
+                      return `
+                    <tr class="data-table__installment-row">
+                      <td>${inst.number === 0 ? 'Entrada' : inst.number}</td>
+                      <td>${escapeHtml(inst.description)}</td>
+                      <td>${formatCurrency(inst.expectedAmount)}</td>
+                      <td>${formatCurrency(inst.paidAmount || 0)}</td>
+                      <td>${formatDate(inst.dueDate)}</td>
+                      <td>${INSTALLMENT_STATUS_LABELS[inst.status] || inst.status}</td>
+                      <td class="data-table__actions">
+                        ${
+                          canPay
+                            ? `
+                          <button type="button" class="btn btn--ghost btn--sm" data-pay="${inst.id}">Pagar</button>
+                          <button type="button" class="btn btn--ghost btn--sm installment-whatsapp-btn" data-whatsapp-collect="${inst.id}" title="Enviar cobrança por WhatsApp">
+                            <i data-lucide="message-circle" aria-hidden="true"></i>
+                            WhatsApp
+                          </button>
+                        `
+                            : '<span class="data-table__actions-placeholder" aria-hidden="true">&nbsp;</span>'
+                        }
+                      </td>
+                    </tr>
+                    ${
+                      paymentsByInstallment[inst.id]?.length
+                        ? paymentsByInstallment[inst.id]
+                            .map(
+                              (p) => `
+                      <tr class="data-table__sub-row">
+                        <td></td>
+                        <td colspan="2">↳ ${formatDate(p.paymentDate)} — ${PAYMENT_METHOD_LABELS[p.paymentMethod] || p.paymentMethod}</td>
+                        <td>${formatCurrency(p.amount)}</td>
+                        <td></td>
+                        <td class="text-muted">${escapeHtml(p.notes || '')}</td>
+                        <td class="data-table__actions">${
+                          isAdmin(user)
+                            ? `<button type="button" class="btn btn--ghost btn--sm" data-delete-payment="${inst.id}" data-payment-id="${p.id}">Estornar</button>`
+                            : '<span class="data-table__actions-placeholder" aria-hidden="true">&nbsp;</span>'
+                        }</td>
+                      </tr>
+                    `
+                            )
+                            .join('')
+                        : ''
+                    }
+                  `;
+                    })
+                    .join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card detail-grid__full">
           <div class="card__header"><h3 class="card__title">Serviços contratados</h3></div>
           <div class="card__body">
             <div class="data-table-wrapper">
@@ -466,72 +533,6 @@ async function renderContractDetail(container, contractId) {
                     <td colspan="2"><strong>Total</strong></td>
                     <td><strong>${formatCurrency(contract.totalAmount)}</strong></td>
                   </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <div class="card detail-grid__full">
-          <div class="card__header"><h3 class="card__title">Parcelas e pagamentos</h3></div>
-          <div class="card__body">
-            <div class="data-table-wrapper">
-              <table class="data-table">
-                <thead><tr><th>#</th><th>Descrição</th><th>Previsto</th><th>Pago</th><th>Vencimento</th><th>Status</th><th></th></tr></thead>
-                <tbody>
-                  ${installments
-                    .map((inst) => {
-                      const remaining = getInstallmentRemaining(inst);
-                      const canPay =
-                        remaining > 0 &&
-                        inst.status !== INSTALLMENT_STATUS.CANCELLED &&
-                        contract.status !== CONTRACT_STATUS.CANCELLED;
-                      return `
-                    <tr>
-                      <td>${inst.number === 0 ? 'Entrada' : inst.number}</td>
-                      <td>${escapeHtml(inst.description)}</td>
-                      <td>${formatCurrency(inst.expectedAmount)}</td>
-                      <td>${formatCurrency(inst.paidAmount || 0)}</td>
-                      <td>${formatDate(inst.dueDate)}</td>
-                      <td>${INSTALLMENT_STATUS_LABELS[inst.status] || inst.status}</td>
-                      <td class="data-table__actions">
-                        ${
-                          canPay
-                            ? `
-                          <button type="button" class="btn btn--ghost btn--sm" data-pay="${inst.id}">Pagar</button>
-                          <button type="button" class="btn btn--ghost btn--sm installment-whatsapp-btn" data-whatsapp-collect="${inst.id}" title="Enviar cobrança por WhatsApp">
-                            <i data-lucide="message-circle" aria-hidden="true"></i>
-                            WhatsApp
-                          </button>
-                        `
-                            : ''
-                        }
-                      </td>
-                    </tr>
-                    ${
-                      paymentsByInstallment[inst.id]?.length
-                        ? paymentsByInstallment[inst.id]
-                            .map(
-                              (p) => `
-                      <tr class="data-table__sub-row">
-                        <td></td>
-                        <td colspan="2">↳ ${formatDate(p.paymentDate)} — ${PAYMENT_METHOD_LABELS[p.paymentMethod] || p.paymentMethod}</td>
-                        <td>${formatCurrency(p.amount)}</td>
-                        <td colspan="2" class="text-muted">${escapeHtml(p.notes || '')}</td>
-                        <td>${
-                          isAdmin(user)
-                            ? `<button type="button" class="btn btn--ghost btn--sm" data-delete-payment="${inst.id}" data-payment-id="${p.id}">Estornar</button>`
-                            : ''
-                        }</td>
-                      </tr>
-                    `
-                            )
-                            .join('')
-                        : ''
-                    }
-                  `;
-                    })
-                    .join('')}
                 </tbody>
               </table>
             </div>

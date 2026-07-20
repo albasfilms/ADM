@@ -19,8 +19,7 @@ const FIELD_LABELS = {
   partnerDocument: ['cpf noivo', 'cpf 2', 'cpf noivo 2', 'cpf noiva 2', 'cpf segundo', 'cpf do segundo'],
   cnpj: ['cnpj'],
   document: ['documento', 'doc'],
-  phone: ['telefone', 'tel', 'celular', 'fone', 'cel'],
-  whatsapp: ['whatsapp', 'zap', 'wpp', 'whats', 'wa'],
+  whatsapp: ['whatsapp', 'zap', 'wpp', 'whats', 'wa', 'telefone', 'tel', 'celular', 'fone', 'cel'],
   email: ['email', 'e-mail', 'e mail', 'mail'],
   instagram: ['instagram', 'insta', 'ig'],
   address: ['endereco', 'endereço', 'rua', 'logradouro', 'address', 'av', 'avenida'],
@@ -49,10 +48,43 @@ function normalizeText(value = '') {
     .trim();
 }
 
+const PLACEHOLDER_VALUES = new Set([
+  'nao informado',
+  'nao informada',
+  'nao informados',
+  'nao informadas',
+  'sem informacao',
+  'sem informacoes',
+  'n/a',
+  'na',
+  '-',
+  '—',
+]);
+
+export function isPlaceholderValue(value = '') {
+  const normalized = normalizeText(value).replace(/[.!?,;]+$/g, '').trim();
+  return !normalized || PLACEHOLDER_VALUES.has(normalized);
+}
+
 export const QUICK_CLIENT_COUPLE_TEMPLATE = `Noiva:
 CPF noiva:
 Noivo:
 CPF noivo:
+WhatsApp:
+E-mail:
+Instagram:
+Endereço:
+Cidade:
+Estado:
+Data do evento:
+Horário:
+Local:
+Cidade do evento:
+Estado do evento:
+Descrição:`;
+
+export const QUICK_CLIENT_SINGLE_TEMPLATE = `Cliente:
+CPF:
 WhatsApp:
 E-mail:
 Instagram:
@@ -87,6 +119,12 @@ function normalizeEventDate(value = '') {
 function normalizeEventTime(value = '') {
   const trimmed = value.trim();
   if (!trimmed) return '';
+
+  const rangeMatch = trimmed.match(/(\d{1,2})\s*h(?:\s*(?:às|as|a)\s*(\d{1,2})\s*h)?/i);
+  if (rangeMatch) {
+    const hours = String(parseInt(rangeMatch[1], 10)).padStart(2, '0');
+    return `${hours}:00`;
+  }
 
   const timeMatch = trimmed.match(/^(\d{1,2})[:hH](\d{2})(?:\s*h)?$/);
   if (timeMatch) {
@@ -168,7 +206,7 @@ function normalizeState(value = '') {
 }
 
 function assignField(result, field, value) {
-  if (!value) return;
+  if (!value || isPlaceholderValue(value)) return;
 
   if (field === 'cpf') {
     if (!result.document) {
@@ -333,13 +371,9 @@ function extractFromLine(line, result, usedLines) {
     }
   }
 
-  if ((!result.whatsapp || !result.phone) && (PHONE_REGEX.test(line) || isBarePhoneLine(line))) {
+  if (!result.whatsapp && (PHONE_REGEX.test(line) || isBarePhoneLine(line))) {
     const phone = line.match(PHONE_REGEX)?.[0] || line;
-    if (!result.whatsapp) {
-      result.whatsapp = phone;
-    } else if (!result.phone) {
-      result.phone = phone;
-    }
+    result.whatsapp = phone;
     usedLines.add(line);
     return true;
   }
@@ -449,7 +483,6 @@ export function parseQuickClientText(text = '') {
     isCouple: false,
     partnerName: '',
     partnerDocument: '',
-    phone: '',
     whatsapp: '',
     email: '',
     instagram: '',
@@ -512,6 +545,14 @@ export function parseQuickClientText(text = '') {
   if (result.isCouple || result.partnerDocument || result.partnerName) {
     result.isCouple = true;
     applyCoupleNameSplit(result);
+  }
+
+  if (!result.city && result.eventCity) {
+    result.city = result.eventCity;
+  }
+
+  if (!result.state && result.eventState) {
+    result.state = result.eventState;
   }
 
   const leftover = unlabeledLines.filter((line) => !usedLines.has(line));

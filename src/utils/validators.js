@@ -110,10 +110,6 @@ export function validateClientForm(data) {
     errors.email = 'E-mail inválido.';
   }
 
-  if (data.phone && !isValidPhone(data.phone)) {
-    errors.phone = 'Telefone inválido.';
-  }
-
   if (data.whatsapp && !isValidPhone(data.whatsapp)) {
     errors.whatsapp = 'WhatsApp inválido.';
   }

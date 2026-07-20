@@ -73,6 +73,8 @@ function normalizeClientData(data) {
   const name = data.name.trim();
   const partnerName = isCouple ? data.partnerName?.trim() || '' : '';
 
+  const whatsapp = data.whatsapp ? onlyDigits(data.whatsapp) : '';
+
   return {
     name,
     nameLower: getClientDisplayName({ name, partnerName, isCouple }).toLowerCase(),
@@ -81,8 +83,8 @@ function normalizeClientData(data) {
     isCouple,
     partnerName,
     partnerDocument: isCouple && data.partnerDocument ? onlyDigits(data.partnerDocument) : '',
-    phone: data.phone ? onlyDigits(data.phone) : '',
-    whatsapp: data.whatsapp ? onlyDigits(data.whatsapp) : '',
+    phone: whatsapp,
+    whatsapp,
     email: data.email?.trim().toLowerCase() || '',
     instagram: data.instagram?.trim() || '',
     address: data.address?.trim() || '',

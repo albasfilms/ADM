@@ -786,6 +786,20 @@
   border-bottom: none;
 }
 
+.data-table tbody tr.data-table__installment-row:has(+ .data-table__sub-row) td {
+  border-bottom: none;
+}
+
+.data-table tbody tr.data-table__installment-row:has(+ .data-table__sub-row):hover,
+.data-table tbody tr.data-table__sub-row:hover {
+  background: transparent;
+}
+
+.data-table tbody tr.data-table__installment-row:has(+ .data-table__sub-row):hover + .data-table__sub-row td,
+.data-table tbody tr.data-table__sub-row:hover td {
+  background: var(--color-off-white);
+}
+
 .data-table tbody tr:hover {
   background: var(--color-off-white);
 }
@@ -1857,6 +1871,9 @@
 .data-table__sub-row td {
   background: var(--color-off-white);
   font-size: var(--font-size-xs);
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+  vertical-align: middle;
 }
 
 .data-table__actions {
@@ -1866,6 +1883,14 @@
   justify-content: flex-end;
   gap: var(--space-1);
   white-space: nowrap;
+  min-width: 7rem;
+  min-height: 2.25rem;
+}
+
+.data-table__actions-placeholder {
+  display: block;
+  width: 100%;
+  min-height: 1.5rem;
 }
 
 .installment-whatsapp-btn {
