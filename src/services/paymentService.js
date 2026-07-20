@@ -20,6 +20,7 @@ import {
 } from '../utils/installmentStatus.js';
 import { createAuditLog } from './auditService.js';
 import { getContractById, getContractInstallmentsFresh } from './contractService.js';
+import { parseDateInput } from '../utils/dates.js';
 import { invalidateCache, invalidateCacheByPrefix } from '../utils/dataCache.js';
 
 const CONTRACTS = 'contracts';
@@ -140,7 +141,7 @@ export async function registerPayment({
       installmentId,
       clientId: contract.clientId,
       amount,
-      paymentDate: Timestamp.fromDate(new Date(paymentDate)),
+      paymentDate: Timestamp.fromDate(parseDateInput(paymentDate)),
       paymentMethod,
       notes: notes.trim(),
       createdBy: user.uid,
@@ -153,7 +154,7 @@ export async function registerPayment({
       paymentMethod: paymentMethod || installment.paymentMethod || '',
       paymentDate:
         newStatus === INSTALLMENT_STATUS.PAID
-          ? Timestamp.fromDate(new Date(paymentDate))
+          ? Timestamp.fromDate(parseDateInput(paymentDate))
           : installment.paymentDate || null,
       status: newStatus,
     });

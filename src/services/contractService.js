@@ -24,6 +24,7 @@ import {
   PAYMENT_PLAN_TYPES,
 } from '../utils/constants.js';
 import { sumCents } from '../utils/currency.js';
+import { parseDateInput } from '../utils/dates.js';
 import { contractHasRecordedPayments } from '../utils/paymentPlanPresets.js';
 import { createAuditLog } from './auditService.js';
 import { getCached, invalidateCache, invalidateCacheByPrefix } from '../utils/dataCache.js';
@@ -210,12 +211,12 @@ function buildContractDoc(data, client, totalAmount) {
     description: data.description?.trim() || '',
     eventType: data.eventType,
     serviceType: data.eventType,
-    eventDate: data.eventDate ? Timestamp.fromDate(new Date(data.eventDate)) : null,
+    eventDate: data.eventDate ? Timestamp.fromDate(parseDateInput(data.eventDate)) : null,
     eventTime: data.eventTime?.trim() || '',
     eventLocation: data.eventLocation?.trim() || '',
     city: data.city?.trim() || '',
     state: data.state?.trim() || '',
-    closingDate: data.closingDate ? Timestamp.fromDate(new Date(data.closingDate)) : null,
+    closingDate: data.closingDate ? Timestamp.fromDate(parseDateInput(data.closingDate)) : null,
     discountAmount: Number(data.discountAmount) || 0,
     totalAmount,
     entryPercent: Number(data.entryPercent) || 0,
@@ -223,7 +224,7 @@ function buildContractDoc(data, client, totalAmount) {
     entryPaymentMethod: data.entryPaymentMethod || '',
     paymentPlanType: data.paymentPlanType || PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING,
     installmentCount: Number(data.installmentCount) || 0,
-    firstDueDate: data.firstDueDate ? Timestamp.fromDate(new Date(data.firstDueDate)) : null,
+    firstDueDate: data.firstDueDate ? Timestamp.fromDate(parseDateInput(data.firstDueDate)) : null,
     installmentIntervalMonths: Number(data.installmentIntervalMonths) || 1,
     driveLink: data.driveLink?.trim() || '',
     contractLink: data.contractLink?.trim() || '',
@@ -242,7 +243,7 @@ function buildContractItemData(item, index) {
     amount: item.amount,
     order: index,
     ...(item.preWeddingDate
-      ? { preWeddingDate: Timestamp.fromDate(new Date(`${item.preWeddingDate}T12:00:00`)) }
+      ? { preWeddingDate: Timestamp.fromDate(parseDateInput(item.preWeddingDate)) }
       : {}),
     ...(item.preWeddingLocation?.trim()
       ? { preWeddingLocation: item.preWeddingLocation.trim() }

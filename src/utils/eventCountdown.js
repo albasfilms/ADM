@@ -1,11 +1,12 @@
-import { toJsDate, startOfDay } from './installmentStatus.js';
+import { startOfDay } from './installmentStatus.js';
+import { toLocalCalendarDate } from './dates.js';
 
 function pad(value) {
   return String(value).padStart(2, '0');
 }
 
 export function getEventDateTime(contract) {
-  const date = toJsDate(contract.eventDate);
+  const date = toLocalCalendarDate(contract.eventDate);
   if (!date) return null;
 
   const event = new Date(date);

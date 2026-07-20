@@ -1,4 +1,5 @@
 import { INSTALLMENT_STATUS, PAYMENT_PLAN_TYPES } from './constants.js';
+import { parseDateInput, toDateInputValue } from './dates.js';
 
 export function contractHasRecordedPayments(installments = []) {
   return installments.some(
@@ -51,17 +52,11 @@ export function subtractMonths(date, months) {
 }
 
 export function toDateInputString(date) {
-  if (!date || Number.isNaN(date.getTime())) return '';
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return toDateInputValue(date);
 }
 
 export function parseFormDate(value) {
-  if (!value) return null;
-  const date = new Date(`${value}T12:00:00`);
-  return Number.isNaN(date.getTime()) ? null : date;
+  return parseDateInput(value);
 }
 
 export function getFirstDueBeforeEvent(eventDate, installmentCount) {

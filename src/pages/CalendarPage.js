@@ -15,8 +15,8 @@ import { formatCurrency } from '../utils/currency.js';
 import { toJsDate, startOfDay, getInstallmentRemaining } from '../utils/installmentStatus.js';
 import { createContractStatusBadge } from '../components/StatusBadge.js';
 
-const WEEKDAYS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
-const WEEKDAYS_MINI = ['S', 'T', 'Q', 'Q', 'S', 'S', 'D'];
+const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const WEEKDAYS_MINI = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 const MONTH_SHORT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
 function groupContractsByDate(contracts) {
@@ -62,7 +62,7 @@ function getDayState(dateKey, contracts, budgetEntries, blockedDays, maxEventsPe
 function buildMonthMatrix(year, month) {
   const firstOfMonth = new Date(year, month, 1);
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const startOffset = (firstOfMonth.getDay() + 6) % 7;
+  const startOffset = firstOfMonth.getDay();
   const cells = [];
 
   for (let i = 0; i < startOffset; i += 1) cells.push(null);

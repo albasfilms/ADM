@@ -13,6 +13,7 @@ import {
 import { db } from '../firebase/config.js';
 import { CONTRACT_STATUS, INSTALLMENT_STATUS } from '../utils/constants.js';
 import { toJsDate, getInstallmentRemaining } from '../utils/installmentStatus.js';
+import { toDateInputValue } from '../utils/dates.js';
 import { getCurrentUser } from '../appState.js';
 import { onlyDigits } from '../utils/validators.js';
 import { getInstallmentsForContracts } from './contractService.js';
@@ -23,12 +24,7 @@ const SETTINGS_REF = doc(db, 'settings', 'calendar');
 export const BLOCK_PRESETS = ['Férias', 'Compromisso pessoal', 'Viagem', 'Folga'];
 
 export function toDateKey(value) {
-  const date = toJsDate(value);
-  if (!date || Number.isNaN(date.getTime())) return '';
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return toDateInputValue(value);
 }
 
 function normalizeBlockedDays(data = {}) {
