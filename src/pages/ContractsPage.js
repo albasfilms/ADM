@@ -21,6 +21,7 @@ import { openPaymentModal } from './PaymentModal.js';
 import {
   getPaymentsForInstallment,
   deletePayment,
+  updateContractTotals,
 } from '../services/paymentService.js';
 import { getClientById } from '../services/clientService.js';
 import { buildWhatsAppSummary, buildInstallmentCollectionMessage, copyToClipboard, openWhatsApp } from '../utils/whatsapp.js';
@@ -323,7 +324,7 @@ async function renderContractDetail(container, contractId) {
   content.appendChild(createSkeletonRows(4, 2));
 
   try {
-    const { contract, items, installments } = await getContractFull(contractId);
+    let { contract, items, installments } = await getContractFull(contractId);
     if (!contract) {
       content.innerHTML = '';
       content.appendChild(
@@ -335,6 +336,17 @@ async function renderContractDetail(container, contractId) {
       );
       return;
     }
+
+    const calculatedReceived = installments
+      .filter((inst) => inst.status !== INSTALLMENT_STATUS.CANCELLED)
+      .reduce((sum, inst) => sum + (inst.paidAmount || 0), 0);
+
+    if (calculatedReceived !== (contract.receivedAmount || 0)) {
+      await updateContractTotals(contractId);
+      ({ contract, items, installments } = await getContractFull(contractId));
+    }
+
+    if (!contract) return;
 
     const user = getCurrentUser();
     const paidPercent = contract.totalAmount

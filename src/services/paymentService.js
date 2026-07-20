@@ -19,8 +19,8 @@ import {
   recalculateContractFinancials,
 } from '../utils/installmentStatus.js';
 import { createAuditLog } from './auditService.js';
-import { getContractById, getContractInstallments } from './contractService.js';
-import { invalidateCacheByPrefix } from '../utils/dataCache.js';
+import { getContractById, getContractInstallmentsFresh } from './contractService.js';
+import { invalidateCache, invalidateCacheByPrefix } from '../utils/dataCache.js';
 
 const CONTRACTS = 'contracts';
 
@@ -49,7 +49,7 @@ export async function updateContractTotals(contractId) {
   const contract = await getContractById(contractId);
   if (!contract) return;
 
-  const installments = await getContractInstallments(contractId);
+  const installments = await getContractInstallmentsFresh(contractId);
   const batch = writeBatch(db);
 
   const refreshed = installments.map((inst) => {
@@ -74,9 +74,12 @@ export async function updateContractTotals(contractId) {
   if (
     receivedAmount >= contract.totalAmount &&
     contract.totalAmount > 0 &&
-    status !== CONTRACT_STATUS.CANCELLED
+    status !== CONTRACT_STATUS.CANCELLED &&
+    status !== CONTRACT_STATUS.FINISHED
   ) {
     status = CONTRACT_STATUS.PAID_OFF;
+  } else if (status === CONTRACT_STATUS.PAID_OFF && receivedAmount < contract.totalAmount) {
+    status = CONTRACT_STATUS.CONFIRMED;
   }
 
   batch.update(doc(db, CONTRACTS, contractId), {

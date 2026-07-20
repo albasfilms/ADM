@@ -123,12 +123,18 @@ export async function getContractItems(contractId) {
 }
 
 export async function getContractInstallments(contractId) {
-  return getCached(`installments:${contractId}`, async () => {
-    const snapshot = await getDocs(collection(db, COLLECTION, contractId, 'installments'));
-    return snapshot.docs
-      .map((d) => ({ id: d.id, ...d.data() }))
-      .sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
-  });
+  return getCached(`installments:${contractId}`, async () => fetchContractInstallments(contractId));
+}
+
+async function fetchContractInstallments(contractId) {
+  const snapshot = await getDocs(collection(db, COLLECTION, contractId, 'installments'));
+  return snapshot.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+}
+
+export async function getContractInstallmentsFresh(contractId) {
+  return fetchContractInstallments(contractId);
 }
 
 async function fetchAllInstallmentRecords() {
