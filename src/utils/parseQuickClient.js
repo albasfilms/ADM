@@ -44,17 +44,17 @@ function normalizeText(value = '') {
     .trim();
 }
 
-export const QUICK_CLIENT_COUPLE_TEMPLATE = `Noiva: Maria Silva
-CPF noiva: 123.456.789-01
-Noivo: João Santos
-CPF noivo: 987.654.321-00
-WhatsApp: (41) 99999-9999
-E-mail: maria@email.com
-Instagram: @mariasilva
-Endereço: Rua das Flores, 123 - Centro
-Cidade: Curitiba
-Estado: PR
-Observações: Data do casamento 15/08/2026`;
+export const QUICK_CLIENT_COUPLE_TEMPLATE = `Noiva:
+CPF noiva:
+Noivo:
+CPF noivo:
+WhatsApp:
+E-mail:
+Instagram:
+Endereço:
+Cidade:
+Estado:
+Observações:`;
 
 function detectField(label) {
   const normalized = normalizeText(label);

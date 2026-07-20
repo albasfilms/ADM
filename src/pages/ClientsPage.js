@@ -28,6 +28,7 @@ import {
   formatDocument,
 } from '../utils/validators.js';
 import { parseQuickClientText, QUICK_CLIENT_COUPLE_TEMPLATE } from '../utils/parseQuickClient.js';
+import { formatDate, formatDateTime } from '../utils/dates.js';
 import { copyToClipboard } from '../utils/whatsapp.js';
 import { escapeHtml, renderIcons, showToast, getFirestoreErrorMessage } from '../utils/dom.js';
 let listState = {
