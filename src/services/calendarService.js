@@ -1,5 +1,6 @@
 import {
   collection,
+  collectionGroup,
   doc,
   getDoc,
   getDocs,
@@ -286,6 +287,44 @@ export function groupPendingPaymentsByDate(pendingPayments = []) {
   return map;
 }
 
+async function loadPreWeddingByDate(contracts) {
+  const contractById = new Map(contracts.map((contract) => [contract.id, contract]));
+  const activeIds = new Set(contracts.map((contract) => contract.id));
+
+  if (!activeIds.size) return {};
+
+  const snapshot = await getDocs(query(collectionGroup(db, 'items'), limit(3000)));
+  const map = new Map();
+
+  snapshot.docs.forEach((docSnap) => {
+    const contractId = docSnap.ref.parent.parent?.id;
+    if (!contractId || !activeIds.has(contractId)) return;
+
+    const item = docSnap.data();
+    if (!item.preWeddingDate) return;
+
+    const dateKey = toDateKey(item.preWeddingDate);
+    if (!dateKey) return;
+
+    const contract = contractById.get(contractId);
+    if (!contract) return;
+
+    if (!map.has(dateKey)) map.set(dateKey, []);
+    map.get(dateKey).push({
+      contract,
+      item: { id: docSnap.id, ...item },
+    });
+  });
+
+  map.forEach((sessions) => {
+    sessions.sort((a, b) =>
+      String(a.item.preWeddingTime || '').localeCompare(String(b.item.preWeddingTime || ''))
+    );
+  });
+
+  return Object.fromEntries(map);
+}
+
 export async function getCalendarData() {
   return getCached('calendar:data', async () => {
     const snapshot = await getDocs(
@@ -293,12 +332,15 @@ export async function getCalendarData() {
     );
 
     const allContracts = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-    const contracts = allContracts.filter((contract) => contract.eventDate && contract.status !== CONTRACT_STATUS.CANCELLED);
+    const activeContracts = allContracts.filter((contract) => contract.status !== CONTRACT_STATUS.CANCELLED);
+    const contracts = activeContracts.filter((contract) => contract.eventDate);
     const pendingPayments = await getPendingPayments(allContracts);
     const settings = await getCalendarSettings();
+    const preWeddingByDate = await loadPreWeddingByDate(activeContracts);
 
     return {
       contracts,
+      preWeddingByDate,
       blockedDays: settings.blockedDays,
       budgetEntries: settings.budgetEntries,
       maxEventsPerDay: settings.maxEventsPerDay,

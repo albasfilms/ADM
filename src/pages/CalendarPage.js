@@ -8,16 +8,25 @@ import {
 } from '../services/calendarService.js';
 import { openBudgetEntryModal } from '../components/BudgetEntryModal.js';
 import { showConfirmModal } from '../components/ConfirmModal.js';
-import { CONTRACT_STATUS } from '../utils/constants.js';
+import { CONTRACT_STATUS, EVENT_TYPES } from '../utils/constants.js';
 import { escapeHtml, getFirestoreErrorMessage, renderIcons, showToast } from '../utils/dom.js';
 import { formatBudgetPhone } from '../utils/budgetDisplay.js';
 import { formatCurrency } from '../utils/currency.js';
+import { resolveContractEventType } from '../utils/contractEventType.js';
 import { toJsDate, startOfDay, getInstallmentRemaining } from '../utils/installmentStatus.js';
 import { createContractStatusBadge } from '../components/StatusBadge.js';
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const WEEKDAYS_MINI = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 const MONTH_SHORT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+function toDateMap(value) {
+  return new Map(Object.entries(value || {}));
+}
+
+function getPreWeddingForDate(preWeddingByDate, dateKey) {
+  return preWeddingByDate?.get(dateKey) || [];
+}
 
 function groupContractsByDate(contracts) {
   const map = new Map();
@@ -44,18 +53,35 @@ function countDateOccupancy(contracts, budgets) {
   return contracts.length + budgets.length;
 }
 
-function getDayState(dateKey, contracts, budgetEntries, blockedDays, maxEventsPerDay) {
+function isCorporateEventDay(contracts) {
+  return contracts.every((contract) => {
+    const eventType = resolveContractEventType(contract);
+    return eventType === EVENT_TYPES.CORPORATE || eventType === EVENT_TYPES.EVENTS;
+  });
+}
+
+function getDayState(dateKey, contracts, budgetEntries, blockedDays, maxEventsPerDay, preWeddingByDate) {
   if (blockedDays[dateKey]) return 'blocked';
 
   const budgets = getBudgetsForDate(budgetEntries, dateKey);
+  const hasPreWedding = getPreWeddingForDate(preWeddingByDate, dateKey).length > 0;
   const totalEvents = countDateOccupancy(contracts, budgets);
+  const corporateDay = contracts.length > 0 && isCorporateEventDay(contracts);
 
-  if (totalEvents >= maxEventsPerDay) {
-    const hasConfirmed = contracts.some((event) => event.status !== CONTRACT_STATUS.BUDGET);
-    return hasConfirmed ? 'booked' : 'tentative';
+  if (contracts.length > 0) {
+    if (totalEvents >= maxEventsPerDay) {
+      const hasConfirmed = contracts.some((event) => event.status !== CONTRACT_STATUS.BUDGET);
+      if (!hasConfirmed) return 'tentative';
+      return corporateDay ? 'corporate' : 'booked';
+    }
+
+    return corporateDay ? 'corporate' : 'partial';
   }
 
-  if (totalEvents > 0) return 'partial';
+  if (hasPreWedding) return 'prewedding';
+
+  if (budgets.length > 0) return 'partial';
+
   return 'available';
 }
 
@@ -88,11 +114,12 @@ function getPaymentsForDate(paymentsByDate, dateKey) {
   return paymentsByDate.get(dateKey) || [];
 }
 
-function renderDayButton(date, { eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey, paymentsByDate, compact = false }) {
+function renderDayButton(date, { eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, preWeddingByDate, selectedDateKey, paymentsByDate, compact = false }) {
   const dateKey = toDateKey(date);
   const contracts = eventsByDate.get(dateKey) || [];
   const budgets = getBudgetsForDate(budgetEntries, dateKey);
-  const state = getDayState(dateKey, contracts, budgetEntries, blockedDays, maxEventsPerDay);
+  const preWeddingSessions = getPreWeddingForDate(preWeddingByDate, dateKey);
+  const state = getDayState(dateKey, contracts, budgetEntries, blockedDays, maxEventsPerDay, preWeddingByDate);
   const pendingPayments = compact ? [] : getPaymentsForDate(paymentsByDate, dateKey);
   const hasPaymentDue = pendingPayments.length > 0;
   const todayKey = toDateKey(new Date());
@@ -101,6 +128,9 @@ function renderDayButton(date, { eventsByDate, budgetEntries, blockedDays, maxEv
   const isPast = startOfDay(date) < startOfDay(new Date());
   const compactClass = compact ? ' calendar-day--mini' : '';
   const eventCount = countDateOccupancy(contracts, budgets);
+  const preWeddingLabel = preWeddingSessions.length
+    ? `${preWeddingSessions.length} pré wedding`
+    : '';
   const paymentLabel = hasPaymentDue
     ? `${pendingPayments.length} pagamento(s) a receber`
     : '';
@@ -110,9 +140,14 @@ function renderDayButton(date, { eventsByDate, budgetEntries, blockedDays, maxEv
       type="button"
       class="calendar-day calendar-day--${state}${compactClass}${isToday ? ' calendar-day--today' : ''}${isSelected ? ' calendar-day--selected' : ''}${isPast ? ' calendar-day--past' : ''}${hasPaymentDue ? ' calendar-day--has-payment' : ''}"
       data-date-key="${dateKey}"
-      aria-label="${date.getDate()} — ${eventCount} evento(s)${hasPaymentDue ? ` — ${paymentLabel}` : ''}"
+      aria-label="${date.getDate()} — ${eventCount} evento(s)${preWeddingLabel ? ` — ${preWeddingLabel}` : ''}${hasPaymentDue ? ` — ${paymentLabel}` : ''}"
     >
       <span class="calendar-day__number">${date.getDate()}</span>
+      ${
+        state === 'blocked'
+          ? `<span class="calendar-day__blocked-mark" aria-hidden="true">×</span>`
+          : ''
+      }
       ${
         hasPaymentDue
           ? `<span class="calendar-day__payment" title="${paymentLabel}" aria-hidden="true">$</span>`
@@ -129,7 +164,7 @@ function renderDayButton(date, { eventsByDate, budgetEntries, blockedDays, maxEv
   `;
 }
 
-function renderDayDetail(dateKey, contracts, budgetEntries, blockedDays, maxEventsPerDay, paymentsByDate) {
+function renderDayDetail(dateKey, contracts, budgetEntries, blockedDays, maxEventsPerDay, paymentsByDate, preWeddingByDate) {
   if (!dateKey) {
     return `<p class="text-muted">Selecione um dia no calendário para ver detalhes.</p>`;
   }
@@ -142,18 +177,39 @@ function renderDayDetail(dateKey, contracts, budgetEntries, blockedDays, maxEven
     year: 'numeric',
   });
   const budgets = getBudgetsForDate(budgetEntries, dateKey);
+  const preWeddingSessions = getPreWeddingForDate(preWeddingByDate, dateKey);
   const pendingPayments = getPaymentsForDate(paymentsByDate, dateKey);
-  const state = getDayState(dateKey, contracts, budgetEntries, blockedDays, maxEventsPerDay);
+  const state = getDayState(dateKey, contracts, budgetEntries, blockedDays, maxEventsPerDay, preWeddingByDate);
   const blockReason = blockedDays[dateKey];
   const isBlocked = Boolean(blockReason);
 
   const stateLabels = {
     available: 'Disponível',
     booked: 'Ocupado',
+    corporate: 'Corporativo/Eventos',
     tentative: 'Orçamento',
     partial: 'Parcialmente ocupado',
-    blocked: 'Indisponível',
+    blocked: 'Bloqueado',
+    prewedding: 'Pré wedding',
   };
+
+  const preWeddingHtml = preWeddingSessions.length
+    ? preWeddingSessions
+        .map(
+          ({ contract, item }) => `
+        <a href="#/contratos/${contract.id}" class="calendar-event-item calendar-event-item--prewedding">
+          <div class="calendar-event-item__header">
+            <span class="calendar-event-item__badge">Pré wedding</span>
+            <strong>${escapeHtml(contract.title || contract.clientName || 'Contrato')}</strong>
+          </div>
+          <span class="calendar-event-item__meta">
+            ${escapeHtml(contract.clientName || '')}${item.preWeddingTime ? `${contract.clientName ? ' · ' : ''}${escapeHtml(item.preWeddingTime)}` : ''}${item.preWeddingLocation ? ` · ${escapeHtml(item.preWeddingLocation)}` : ''}
+          </span>
+        </a>
+      `
+        )
+        .join('')
+    : '';
 
   const contractEventsHtml = contracts.length
     ? contracts
@@ -226,8 +282,8 @@ function renderDayDetail(dateKey, contracts, budgetEntries, blockedDays, maxEven
     : '';
 
   const eventsHtml =
-    contractEventsHtml || budgetEventsHtml
-      ? `${contractEventsHtml}${budgetEventsHtml}`
+    contractEventsHtml || budgetEventsHtml || preWeddingHtml
+      ? `${preWeddingHtml}${contractEventsHtml}${budgetEventsHtml}`
       : '<p class="text-muted">Nenhum evento neste dia.</p>';
 
   const budgetSection = isBlocked
@@ -293,13 +349,13 @@ function renderDayDetail(dateKey, contracts, budgetEntries, blockedDays, maxEven
   `;
 }
 
-function renderMonthGrid({ year, month, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey, paymentsByDate }) {
+function renderMonthGrid({ year, month, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, preWeddingByDate, selectedDateKey, paymentsByDate }) {
   const cells = buildMonthMatrix(year, month);
   const weekdays = WEEKDAYS.map((day) => `<div class="calendar-weekday">${day}</div>`).join('');
   const dayCells = cells
     .map((date) => {
       if (!date) return `<div class="calendar-day calendar-day--empty" aria-hidden="true"></div>`;
-      return renderDayButton(date, { eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey, paymentsByDate });
+      return renderDayButton(date, { eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, preWeddingByDate, selectedDateKey, paymentsByDate });
     })
     .join('');
 
@@ -349,46 +405,49 @@ function renderMiniMonth(year, month, context) {
   `;
 }
 
-function renderYearGrid({ year, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey }) {
-  const context = { eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey };
+function renderYearGrid({ year, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, preWeddingByDate, selectedDateKey }) {
+  const context = { eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, preWeddingByDate, selectedDateKey };
   const months = Array.from({ length: 12 }, (_, month) => renderMiniMonth(year, month, context)).join('');
 
   return `<div class="calendar-year-grid">${months}</div>`;
 }
 
-function countMonthStats(year, month, eventsByDate, budgetEntries, blockedDaysMap, maxEventsPerDay) {
+function countMonthStats(year, month, eventsByDate, budgetEntries, blockedDaysMap, maxEventsPerDay, preWeddingByDate) {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   let eventDays = 0;
   let pendingBudgets = 0;
   let availableDays = 0;
   let blockedCount = 0;
+  let preWeddingDays = 0;
 
   for (let day = 1; day <= daysInMonth; day += 1) {
     const dateKey = toDateKey(new Date(year, month, day));
     const contracts = eventsByDate.get(dateKey) || [];
     const budgets = getBudgetsForDate(budgetEntries, dateKey);
-    const state = getDayState(dateKey, contracts, budgetEntries, blockedDaysMap, maxEventsPerDay);
+    const state = getDayState(dateKey, contracts, budgetEntries, blockedDaysMap, maxEventsPerDay, preWeddingByDate);
 
     if (contracts.length > 0) eventDays += 1;
     if (budgets.length > 0 && contracts.length === 0) pendingBudgets += budgets.length;
     if (state === 'blocked') blockedCount += 1;
+    if (state === 'prewedding') preWeddingDays += 1;
     if (state === 'available') availableDays += 1;
   }
 
-  return { eventDays, pendingBudgets, availableDays, blockedDays: blockedCount };
+  return { eventDays, pendingBudgets, availableDays, blockedDays: blockedCount, preWeddingDays };
 }
 
-function countYearStats(year, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay) {
+function countYearStats(year, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, preWeddingByDate) {
   return Array.from({ length: 12 }, (_, month) =>
-    countMonthStats(year, month, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay)
+    countMonthStats(year, month, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, preWeddingByDate)
   ).reduce(
     (acc, stats) => ({
       eventDays: acc.eventDays + stats.eventDays,
       pendingBudgets: acc.pendingBudgets + stats.pendingBudgets,
       availableDays: acc.availableDays + stats.availableDays,
       blockedDays: acc.blockedDays + stats.blockedDays,
+      preWeddingDays: acc.preWeddingDays + stats.preWeddingDays,
     }),
-    { eventDays: 0, pendingBudgets: 0, availableDays: 0, blockedDays: 0 }
+    { eventDays: 0, pendingBudgets: 0, availableDays: 0, blockedDays: 0, preWeddingDays: 0 }
   );
 }
 
@@ -414,7 +473,7 @@ function bindCalendarPage(container, state) {
   };
 
   const render = () => {
-    const { year, month, viewMode, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey, paymentsByDate } = state;
+    const { year, month, viewMode, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, preWeddingByDate, selectedDateKey, paymentsByDate } = state;
 
     container.querySelector('#calendar-period-label').textContent =
       viewMode === 'year' ? formatYearLabel(year) : formatMonthLabel(year, month);
@@ -433,13 +492,13 @@ function bindCalendarPage(container, state) {
 
     container.querySelector('#calendar-grid').innerHTML =
       viewMode === 'year'
-        ? renderYearGrid({ year, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey })
-        : renderMonthGrid({ year, month, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, selectedDateKey, paymentsByDate });
+        ? renderYearGrid({ year, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, preWeddingByDate, selectedDateKey })
+        : renderMonthGrid({ year, month, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, preWeddingByDate, selectedDateKey, paymentsByDate });
 
     const stats =
       viewMode === 'year'
-        ? countYearStats(year, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay)
-        : countMonthStats(year, month, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay);
+        ? countYearStats(year, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, preWeddingByDate)
+        : countMonthStats(year, month, eventsByDate, budgetEntries, blockedDays, maxEventsPerDay, preWeddingByDate);
 
     container.querySelector('#calendar-stat-events').textContent = String(stats.eventDays);
     container.querySelector('#calendar-stat-budgets').textContent = String(stats.pendingBudgets);
@@ -453,7 +512,8 @@ function bindCalendarPage(container, state) {
       budgetEntries,
       blockedDays,
       maxEventsPerDay,
-      paymentsByDate
+      paymentsByDate,
+      preWeddingByDate
     );
 
     setViewToggleActive(container, viewMode);
@@ -668,8 +728,10 @@ export async function renderCalendarPage(container) {
           <ul class="calendar-legend calendar-legend--inline" aria-label="Legenda do calendário">
             <li><span class="calendar-legend__dot calendar-legend__dot--available"></span> Disponível</li>
             <li><span class="calendar-legend__dot calendar-legend__dot--booked"></span> Ocupado</li>
+            <li><span class="calendar-legend__dot calendar-legend__dot--corporate"></span> Corporativo/Eventos</li>
             <li><span class="calendar-legend__dot calendar-legend__dot--tentative"></span> Orçamento</li>
-            <li><span class="calendar-legend__dot calendar-legend__dot--blocked"></span> Indisponível</li>
+            <li><span class="calendar-legend__dot calendar-legend__dot--prewedding"></span> Pré wedding</li>
+            <li><span class="calendar-legend__mark calendar-legend__mark--blocked" aria-hidden="true">×</span> Bloqueado</li>
           </ul>
         </div>
         <div class="card__body">
@@ -701,6 +763,7 @@ export async function renderCalendarPage(container) {
       viewMode: defaultViewMode,
       selectedDateKey: toDateKey(now),
       eventsByDate: groupContractsByDate(data.contracts),
+      preWeddingByDate: toDateMap(data.preWeddingByDate),
       blockedDays: data.blockedDays,
       budgetEntries: data.budgetEntries,
       maxEventsPerDay: data.maxEventsPerDay,

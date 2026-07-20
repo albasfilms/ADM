@@ -2468,12 +2468,12 @@
 }
 
 .calendar-day--booked {
-  background: #ffedd5;
-  border-color: #f97316;
+  background: #fee2e2;
+  border-color: #ef4444;
 }
 
 .calendar-day--booked .calendar-day__number {
-  color: #c2410c;
+  color: #b91c1c;
   font-weight: 700;
 }
 
@@ -2488,17 +2488,48 @@
 }
 
 .calendar-day--blocked {
-  background: #fecaca;
-  border-color: #ef4444;
+  background: #f3f4f6;
+  border-color: #d1d5db;
 }
 
 .calendar-day--blocked .calendar-day__number {
-  color: #b91c1c;
+  color: #9ca3af;
+  font-weight: 600;
+}
+
+.calendar-day__blocked-mark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
   font-weight: 700;
+  color: #6b7280;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.calendar-day--mini .calendar-day__blocked-mark {
+  font-size: 0.85rem;
 }
 
 .calendar-day--booked .calendar-day__dots span {
-  background: #f97316;
+  background: #ef4444;
+}
+
+.calendar-day--corporate {
+  background: #f3e8ff;
+  border-color: #9333ea;
+}
+
+.calendar-day--corporate .calendar-day__number {
+  color: #7e22ce;
+  font-weight: 700;
+}
+
+.calendar-day--corporate .calendar-day__dots span {
+  background: #9333ea;
 }
 
 .calendar-day--tentative .calendar-day__dots span {
@@ -2508,6 +2539,16 @@
 .calendar-day--partial {
   background: #f7f2ff;
   border-color: #ddd0f5;
+}
+
+.calendar-day--prewedding {
+  background: #ffedd5;
+  border-color: #f97316;
+}
+
+.calendar-day--prewedding .calendar-day__number {
+  color: #c2410c;
+  font-weight: 700;
 }
 
 .calendar-day--mini {
@@ -2678,8 +2719,13 @@
 }
 
 .calendar-legend__dot--booked {
-  background: #ffedd5;
-  border-color: #f97316;
+  background: #fee2e2;
+  border-color: #ef4444;
+}
+
+.calendar-legend__dot--corporate {
+  background: #f3e8ff;
+  border-color: #9333ea;
 }
 
 .calendar-legend__dot--tentative {
@@ -2687,9 +2733,25 @@
   border-color: #3b82f6;
 }
 
-.calendar-legend__dot--blocked {
-  background: #fecaca;
-  border-color: #ef4444;
+.calendar-legend__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.calendar-legend__mark--blocked {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.calendar-legend__dot--prewedding {
+  background: #ffedd5;
+  border-color: #f97316;
 }
 
 .calendar-detail__title {
@@ -2715,8 +2777,13 @@
 }
 
 .calendar-detail__status--booked {
-  background: #ffedd5;
-  color: #c2410c;
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.calendar-detail__status--corporate {
+  background: #f3e8ff;
+  color: #7e22ce;
 }
 
 .calendar-detail__status--tentative {
@@ -2725,13 +2792,18 @@
 }
 
 .calendar-detail__status--blocked {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: #f3f4f6;
+  color: #6b7280;
 }
 
 .calendar-detail__status--partial {
   background: #efe8ff;
   color: #5b3f8f;
+}
+
+.calendar-detail__status--prewedding {
+  background: #ffedd5;
+  color: #c2410c;
 }
 
 .calendar-detail__events {
@@ -2933,6 +3005,34 @@
 .calendar-event-item__meta {
   font-size: var(--font-size-xs);
   color: var(--color-gray-500);
+}
+
+.calendar-event-item--prewedding {
+  border-color: #fdba74;
+  background: #fff7ed;
+}
+
+.calendar-event-item--prewedding:hover {
+  border-color: #f97316;
+  background: #ffedd5;
+}
+
+.calendar-event-item__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: #ffedd5;
+  color: #c2410c;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.calendar-event-item--prewedding .calendar-event-item__header {
+  flex-wrap: wrap;
 }
 
 /* ─── Notas ─────────────────────────────────────────────────── */
