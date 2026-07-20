@@ -62,6 +62,17 @@ function getContractEventType(contractForm) {
   return contractForm?.querySelector('[name="eventType"]')?.value || EVENT_TYPES.WEDDING;
 }
 
+function isClientFormWedding(form) {
+  return form?.dataset.weddingEvent !== 'false';
+}
+
+function setElementHidden(element, hidden) {
+  if (!element) return;
+  element.hidden = hidden;
+  element.toggleAttribute('hidden', hidden);
+  element.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+}
+
 function getClientFormLabels({ wedding, coupleActive, personType }) {
   const isCompany = personType === PERSON_TYPES.COMPANY;
 
@@ -117,6 +128,7 @@ export function syncClientFormForEventType(clientForm, contractForm) {
 
   const wedding = isWeddingEventType(getContractEventType(contractForm));
   clientForm.dataset.weddingEvent = wedding ? 'true' : 'false';
+  clientForm.classList.toggle('client-form--single-client', !wedding);
 
   const coupleToggleWrap = clientForm.querySelector('#client-couple-toggle');
   const isCoupleCheckbox = clientForm.querySelector('#client-isCouple');
@@ -124,11 +136,9 @@ export function syncClientFormForEventType(clientForm, contractForm) {
 
   if (!wedding) {
     setCoupleMode(clientForm, false, { preserveNames: true, wedding: false });
-    if (coupleToggleWrap) coupleToggleWrap.hidden = true;
+    setElementHidden(coupleToggleWrap, true);
   } else {
-    if (coupleToggleWrap) {
-      coupleToggleWrap.hidden = personType === PERSON_TYPES.COMPANY;
-    }
+    setElementHidden(coupleToggleWrap, personType === PERSON_TYPES.COMPANY);
     setCoupleMode(clientForm, isCoupleCheckbox?.checked ?? true, {
       preserveNames: true,
       wedding: true,
@@ -246,10 +256,8 @@ function setCoupleMode(form, enabled, { preserveNames = true, wedding = null } =
   const active = enabled && !isCompany && isWedding;
 
   isCoupleCheckbox.checked = active;
-  coupleFields.hidden = !active;
-  if (coupleToggleWrap) {
-    coupleToggleWrap.hidden = isCompany || !isWedding;
-  }
+  setElementHidden(coupleFields, !active);
+  setElementHidden(coupleToggleWrap, isCompany || !isWedding);
 
   const labels = getClientFormLabels({
     wedding: isWedding,
@@ -351,6 +359,10 @@ function applyQuickClientParse(form, parsed, { contractForm = null } = {}) {
   form.querySelector('#client-partnerName')?.dispatchEvent(new Event('input', { bubbles: true }));
   form.querySelector('#client-city')?.dispatchEvent(new Event('change', { bubbles: true }));
   form.querySelector('#client-state')?.dispatchEvent(new Event('change', { bubbles: true }));
+
+  if (contractForm) {
+    syncClientFormForEventType(form, contractForm);
+  }
 }
 
 export function applyQuickContractParse(contractForm, parsed) {
@@ -471,6 +483,9 @@ export function buildClientForm(client = null, { contractForm = null } = {}) {
   const eventType = getContractEventType(contractForm);
   const wedding = isWeddingEventType(eventType);
   form.dataset.weddingEvent = wedding ? 'true' : 'false';
+  if (!wedding) {
+    form.classList.add('client-form--single-client');
+  }
 
   const personType = client?.personType || PERSON_TYPES.INDIVIDUAL;
   const isCoupleMode = client ? coupleFields.isCouple : wedding;
@@ -637,7 +652,7 @@ export function buildClientForm(client = null, { contractForm = null } = {}) {
   const partnerDocumentInput = form.querySelector('#client-partnerDocument');
 
   isCoupleCheckbox?.addEventListener('change', () => {
-    setCoupleMode(form, isCoupleCheckbox.checked, { wedding });
+    setCoupleMode(form, isCoupleCheckbox.checked, { wedding: isClientFormWedding(form) });
   });
 
   documentInput.addEventListener('input', () => {
@@ -657,6 +672,10 @@ export function buildClientForm(client = null, { contractForm = null } = {}) {
 
   if (!client) {
     bindQuickClientRegister(form, contractForm);
+  }
+
+  if (contractForm) {
+    syncClientFormForEventType(form, contractForm);
   }
 
   return form;
