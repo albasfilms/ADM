@@ -890,12 +890,28 @@
 .contract-item-pre-wedding {
   display: none;
   flex-direction: column;
-  gap: var(--space-2);
-  max-width: 280px;
+  gap: var(--space-3);
+  max-width: 100%;
   padding: var(--space-3);
   background: var(--color-gray-50);
   border: 1px solid var(--color-gray-100);
   border-radius: var(--radius-md);
+}
+
+.contract-item-pre-wedding__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.contract-item-pre-wedding__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.contract-item-pre-wedding__field--full {
+  grid-column: 1 / -1;
 }
 
 .contract-item-pre-wedding.is-visible {

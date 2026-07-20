@@ -229,6 +229,28 @@ function buildContractDoc(data, client, totalAmount) {
   };
 }
 
+function buildContractItemData(item, index) {
+  return {
+    description: item.description.trim(),
+    serviceType: item.serviceType,
+    amount: item.amount,
+    order: index,
+    ...(item.preWeddingDate
+      ? { preWeddingDate: Timestamp.fromDate(new Date(`${item.preWeddingDate}T12:00:00`)) }
+      : {}),
+    ...(item.preWeddingLocation?.trim()
+      ? { preWeddingLocation: item.preWeddingLocation.trim() }
+      : {}),
+    ...(item.preWeddingTime?.trim() ? { preWeddingTime: item.preWeddingTime.trim() } : {}),
+    ...(item.makingOfLocation?.trim()
+      ? { makingOfLocation: item.makingOfLocation.trim() }
+      : {}),
+    ...(item.makingOfSchedule?.trim()
+      ? { makingOfSchedule: item.makingOfSchedule.trim() }
+      : {}),
+  };
+}
+
 export async function createContract(data, items, installments, client) {
   const subtotalAmount = sumCents(items.map((i) => i.amount));
   const discountAmount = Number(data.discountAmount) || 0;
@@ -244,15 +266,7 @@ export async function createContract(data, items, installments, client) {
 
   items.forEach((item, index) => {
     const itemRef = doc(collection(db, COLLECTION, contractRef.id, 'items'));
-    batch.set(itemRef, {
-      description: item.description.trim(),
-      serviceType: item.serviceType,
-      amount: item.amount,
-      order: index,
-      ...(item.preWeddingDate
-        ? { preWeddingDate: Timestamp.fromDate(new Date(`${item.preWeddingDate}T12:00:00`)) }
-        : {}),
-    });
+    batch.set(itemRef, buildContractItemData(item, index));
   });
 
   installments.forEach((inst) => {
@@ -315,15 +329,7 @@ export async function updateContract(
 
   items.forEach((item, index) => {
     const itemRef = doc(collection(db, COLLECTION, contractId, 'items'));
-    batch.set(itemRef, {
-      description: item.description.trim(),
-      serviceType: item.serviceType,
-      amount: item.amount,
-      order: index,
-      ...(item.preWeddingDate
-        ? { preWeddingDate: Timestamp.fromDate(new Date(`${item.preWeddingDate}T12:00:00`)) }
-        : {}),
-    });
+    batch.set(itemRef, buildContractItemData(item, index));
   });
 
   if (shouldReplaceInstallments) {

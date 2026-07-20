@@ -59,7 +59,13 @@ import {
   getServicePrice,
   hasCatalogPrice,
 } from '../utils/servicePricing.js';
-import { CONTRACT_ITEM_SERVICE_ORDER } from '../utils/contractServices.js';
+import {
+  CONTRACT_ITEM_SERVICE_ORDER,
+  MAKING_OF_BRIDE_DEFAULTS,
+  PRE_WEDDING_DEFAULTS,
+  calculateMakingOfBrideTime,
+  isTimeValue,
+} from '../utils/contractServices.js';
 import { resolveContractEventType } from '../utils/contractEventType.js';
 
 function getItemsSubtotalCents(form) {
@@ -171,7 +177,22 @@ function getEntryAmountCents(form, totalCents) {
 }
 
 function isCustomInstallmentsEnabled(form) {
+  if (getSelectedPaymentPlanType(form) !== PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING) {
+    return false;
+  }
   return Boolean(form.querySelector('#custom-installments-enabled')?.checked);
+}
+
+function syncCustomInstallmentsAvailability(form) {
+  const toggle = form.querySelector('#custom-installments-toggle');
+  const checkbox = form.querySelector('#custom-installments-enabled');
+  const available = getSelectedPaymentPlanType(form) === PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING;
+
+  if (toggle) toggle.hidden = !available;
+
+  if (!available && checkbox?.checked) {
+    checkbox.checked = false;
+  }
 }
 
 function getDefaultInstallmentAmounts(form, totalCents) {
@@ -296,6 +317,8 @@ function renderCustomInstallmentFields(form) {
 }
 
 function syncCustomInstallmentsUI(form) {
+  syncCustomInstallmentsAvailability(form);
+
   const wrapper = form.querySelector('#custom-installments-field');
   const panel = form.querySelector('#custom-installments-panel');
   const list = form.querySelector('#custom-installments-list');
@@ -583,6 +606,7 @@ function applyPaymentPlanPreset(form) {
       installmentCount.max = '10';
     }
     if (hint) hint.hidden = true;
+    syncCustomInstallmentsAvailability(form);
     syncInstallmentBreakdown(form);
     return;
   }
@@ -600,6 +624,7 @@ function applyPaymentPlanPreset(form) {
     if (!firstDueDate.value) firstDueDate.value = toDateInputString(closingDate);
   }
   if (hint) hint.hidden = true;
+  syncCustomInstallmentsAvailability(form);
   updateTotalDisplay(form);
   syncInstallmentBreakdown(form);
 }
@@ -822,13 +847,23 @@ function getContractFormStatus(contract) {
   return CONTRACT_STATUS.CONFIRMED;
 }
 
-function buildItemRow(item = {}, index = 0) {
+function buildItemRow(item = {}, index = 0, ceremonyTime = '16:00') {
   const serviceType = item.serviceType || SERVICE_TYPES.STORYMAKER;
   const autoPrice = item.amount ? '' : 'true';
   const amount = item.amount || (hasCatalogPrice(serviceType) ? getServicePrice(serviceType, [serviceType]) : 0);
   const description = item.description || '';
   const isPreWedding = serviceType === SERVICE_TYPES.PRE_WEDDING;
   const preWeddingDate = toDateInputValue(item.preWeddingDate);
+  const preWeddingLocation = item.preWeddingLocation || '';
+  const preWeddingTime = item.preWeddingTime || (isPreWedding ? PRE_WEDDING_DEFAULTS.time : '');
+  const isMakingOfBride = serviceType === SERVICE_TYPES.MAKING_OF_BRIDE;
+  const makingOfLocation =
+    item.makingOfLocation || (isMakingOfBride ? MAKING_OF_BRIDE_DEFAULTS.location : '');
+  const makingOfSchedule = isMakingOfBride
+    ? isTimeValue(item.makingOfSchedule)
+      ? item.makingOfSchedule
+      : calculateMakingOfBrideTime(ceremonyTime)
+    : '';
 
   return `
     <div class="contract-item-group" data-item-index="${index}">
@@ -845,27 +880,133 @@ function buildItemRow(item = {}, index = 0) {
         </button>
       </div>
       <div class="contract-item-pre-wedding${isPreWedding ? ' is-visible' : ''}" data-pre-wedding-panel="${index}">
-        <label class="form-field__label" for="item-pre-wedding-date-${index}">Data do pré wedding</label>
-        <input
-          class="form-field__input"
-          type="date"
-          id="item-pre-wedding-date-${index}"
-          name="itemPreWeddingDate_${index}"
-          value="${preWeddingDate}"
-        />
+        <div class="contract-item-pre-wedding__grid">
+          <div class="contract-item-pre-wedding__field">
+            <label class="form-field__label" for="item-pre-wedding-date-${index}">Data do pré wedding</label>
+            <input
+              class="form-field__input"
+              type="date"
+              id="item-pre-wedding-date-${index}"
+              name="itemPreWeddingDate_${index}"
+              value="${preWeddingDate}"
+            />
+          </div>
+          <div class="contract-item-pre-wedding__field">
+            <label class="form-field__label" for="item-pre-wedding-time-${index}">Horário</label>
+            <input
+              class="form-field__input"
+              type="time"
+              id="item-pre-wedding-time-${index}"
+              name="itemPreWeddingTime_${index}"
+              value="${escapeHtml(preWeddingTime)}"
+            />
+          </div>
+          <div class="contract-item-pre-wedding__field contract-item-pre-wedding__field--full">
+            <label class="form-field__label" for="item-pre-wedding-location-${index}">Local</label>
+            <input
+              class="form-field__input"
+              type="text"
+              id="item-pre-wedding-location-${index}"
+              name="itemPreWeddingLocation_${index}"
+              value="${escapeHtml(preWeddingLocation)}"
+              placeholder="Ex: Parque, estúdio, endereço..."
+            />
+          </div>
+        </div>
+      </div>
+      <div class="contract-item-pre-wedding${isMakingOfBride ? ' is-visible' : ''}" data-making-of-panel="${index}">
+        <div class="contract-item-pre-wedding__grid">
+          <div class="contract-item-pre-wedding__field">
+            <label class="form-field__label" for="item-making-of-location-${index}">Local</label>
+            <input
+              class="form-field__input"
+              type="text"
+              id="item-making-of-location-${index}"
+              name="itemMakingOfLocation_${index}"
+              value="${escapeHtml(makingOfLocation)}"
+              placeholder="Ex: No local da festa"
+            />
+          </div>
+          <div class="contract-item-pre-wedding__field">
+            <label class="form-field__label" for="item-making-of-schedule-${index}">Horário</label>
+            <input
+              class="form-field__input"
+              type="time"
+              id="item-making-of-schedule-${index}"
+              name="itemMakingOfSchedule_${index}"
+              value="${escapeHtml(makingOfSchedule)}"
+            />
+            <p class="form-field__hint">2 horas antes do horário da cerimônia.</p>
+          </div>
+        </div>
       </div>
     </div>
   `;
 }
 
-function syncServiceItemPreWeddingPanels(form) {
+function applyPreWeddingDefaults(form, index) {
+  const timeInput = form.querySelector(`[name="itemPreWeddingTime_${index}"]`);
+  if (timeInput && !timeInput.value.trim()) {
+    timeInput.value = PRE_WEDDING_DEFAULTS.time;
+  }
+}
+
+function getCeremonyTimeFromForm(form) {
+  return form.querySelector('[name="eventTime"]')?.value || '16:00';
+}
+
+function applyMakingOfBrideDefaults(form, index) {
+  const locationInput = form.querySelector(`[name="itemMakingOfLocation_${index}"]`);
+  const scheduleInput = form.querySelector(`[name="itemMakingOfSchedule_${index}"]`);
+
+  if (locationInput && !locationInput.value.trim()) {
+    locationInput.value = MAKING_OF_BRIDE_DEFAULTS.location;
+  }
+
+  if (scheduleInput) {
+    const calculated = calculateMakingOfBrideTime(getCeremonyTimeFromForm(form));
+    if (calculated) {
+      scheduleInput.value = calculated;
+    }
+  }
+}
+
+function syncMakingOfBrideSchedules(form) {
   form.querySelectorAll('.contract-item-group').forEach((group) => {
     const index = group.dataset.itemIndex;
     const serviceType = form.querySelector(`[name="itemServiceType_${index}"]`)?.value;
-    const panel = group.querySelector(`[data-pre-wedding-panel="${index}"]`);
-    if (!panel) return;
-    panel.classList.toggle('is-visible', serviceType === SERVICE_TYPES.PRE_WEDDING);
+    if (serviceType === SERVICE_TYPES.MAKING_OF_BRIDE) {
+      applyMakingOfBrideDefaults(form, index);
+    }
   });
+}
+
+function syncServiceItemDetailPanels(form) {
+  form.querySelectorAll('.contract-item-group').forEach((group) => {
+    const index = group.dataset.itemIndex;
+    const serviceType = form.querySelector(`[name="itemServiceType_${index}"]`)?.value;
+    const preWeddingPanel = group.querySelector(`[data-pre-wedding-panel="${index}"]`);
+    if (preWeddingPanel) {
+      const isPreWedding = serviceType === SERVICE_TYPES.PRE_WEDDING;
+      preWeddingPanel.classList.toggle('is-visible', isPreWedding);
+      if (isPreWedding) {
+        applyPreWeddingDefaults(form, index);
+      }
+    }
+
+    const makingOfPanel = group.querySelector(`[data-making-of-panel="${index}"]`);
+    if (makingOfPanel) {
+      const isMakingOfBride = serviceType === SERVICE_TYPES.MAKING_OF_BRIDE;
+      makingOfPanel.classList.toggle('is-visible', isMakingOfBride);
+      if (isMakingOfBride) {
+        applyMakingOfBrideDefaults(form, index);
+      }
+    }
+  });
+}
+
+function syncServiceItemPreWeddingPanels(form) {
+  syncServiceItemDetailPanels(form);
 }
 
 function collectItems(form) {
@@ -877,6 +1018,10 @@ function collectItems(form) {
     const description = form.querySelector(`[name="itemDescription_${index}"]`)?.value;
     const serviceType = form.querySelector(`[name="itemServiceType_${index}"]`)?.value;
     const preWeddingDate = form.querySelector(`[name="itemPreWeddingDate_${index}"]`)?.value;
+    const preWeddingLocation = form.querySelector(`[name="itemPreWeddingLocation_${index}"]`)?.value;
+    const preWeddingTime = form.querySelector(`[name="itemPreWeddingTime_${index}"]`)?.value;
+    const makingOfLocation = form.querySelector(`[name="itemMakingOfLocation_${index}"]`)?.value;
+    const makingOfSchedule = form.querySelector(`[name="itemMakingOfSchedule_${index}"]`)?.value;
     const amount = parseCurrencyInput(
       form.querySelector(`[name="itemAmount_${index}"]`)?.value
     );
@@ -886,8 +1031,18 @@ function collectItems(form) {
         description: description?.trim() || SERVICE_TYPE_LABELS[serviceType] || 'Serviço',
         serviceType,
         amount,
-        ...(serviceType === SERVICE_TYPES.PRE_WEDDING && preWeddingDate
-          ? { preWeddingDate }
+        ...(serviceType === SERVICE_TYPES.PRE_WEDDING
+          ? {
+              ...(preWeddingDate ? { preWeddingDate } : {}),
+              ...(preWeddingLocation?.trim() ? { preWeddingLocation: preWeddingLocation.trim() } : {}),
+              ...(preWeddingTime?.trim() ? { preWeddingTime: preWeddingTime.trim() } : {}),
+            }
+          : {}),
+        ...(serviceType === SERVICE_TYPES.MAKING_OF_BRIDE
+          ? {
+              ...(makingOfLocation?.trim() ? { makingOfLocation: makingOfLocation.trim() } : {}),
+              ...(makingOfSchedule?.trim() ? { makingOfSchedule: makingOfSchedule.trim() } : {}),
+            }
           : {}),
       });
     }
@@ -1474,7 +1629,7 @@ export function openContractFormModal({
         </button>
       </div>
       <div class="contract-items" id="contract-items">
-        ${initialItems.map((item, i) => buildItemRow(item, i)).join('')}
+        ${initialItems.map((item, i) => buildItemRow(item, i, defaults.eventTime)).join('')}
       </div>
       <span class="form-field__error" data-error="items" hidden></span>
       <div class="contract-total">
@@ -1553,7 +1708,7 @@ export function openContractFormModal({
           <label class="form-field__label" id="installment-count-label">Nº de parcelas antes do casamento</label>
           <input class="form-field__input" type="number" name="installmentCount" min="1" max="24" value="${initialInstallmentCount}" />
           <p class="form-field__hint" id="installment-breakdown-hint" hidden></p>
-          <label class="form-checkbox" for="custom-installments-enabled">
+          <label class="form-checkbox" id="custom-installments-toggle" for="custom-installments-enabled">
             <input
               type="checkbox"
               id="custom-installments-enabled"
@@ -1712,7 +1867,7 @@ export function openContractFormModal({
   form.querySelector('#add-item-btn')?.addEventListener('click', () => {
     const container = form.querySelector('#contract-items');
     const nextItem = getNextContractItem(form);
-    container.insertAdjacentHTML('beforeend', buildItemRow(nextItem, itemIndex));
+    container.insertAdjacentHTML('beforeend', buildItemRow(nextItem, itemIndex, getCeremonyTimeFromForm(form)));
     itemIndex += 1;
     renderIcons(container);
     const newRow = container.lastElementChild;
@@ -1756,6 +1911,14 @@ export function openContractFormModal({
 
   form.querySelector('[name="eventDate"]')?.addEventListener('change', () => {
     syncFirstDueFromEvent(form);
+  });
+
+  form.querySelector('[name="eventTime"]')?.addEventListener('input', () => {
+    syncMakingOfBrideSchedules(form);
+  });
+
+  form.querySelector('[name="eventTime"]')?.addEventListener('change', () => {
+    syncMakingOfBrideSchedules(form);
   });
 
   form.querySelector('[name="firstDueDate"]')?.addEventListener('change', () => {

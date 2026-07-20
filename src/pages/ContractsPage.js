@@ -30,6 +30,7 @@ import {
   CONTRACT_STATUS_LABELS,
   EVENT_TYPE_LABELS,
   SERVICE_TYPE_LABELS,
+  SERVICE_TYPES,
   INSTALLMENT_STATUS,
   INSTALLMENT_STATUS_LABELS,
   PAYMENT_METHOD_LABELS,
@@ -41,6 +42,7 @@ import { isAdmin, canDeleteContracts } from '../utils/permissions.js';
 import { getCurrentUser } from '../appState.js';
 import { formatDaysUntilEvent, getEventTimestamp } from '../utils/eventCountdown.js';
 import { resolveContractEventType } from '../utils/contractEventType.js';
+import { isTimeValue } from '../utils/contractServices.js';
 
 let listState = {
   search: '',
@@ -59,6 +61,44 @@ function resetPagination() {
 function formatEventLocation(contract) {
   const parts = [contract.eventLocation, contract.city, contract.state].filter(Boolean);
   return parts.length ? parts.join(' · ') : 'Local não informado';
+}
+
+function formatPreWeddingDetails(item) {
+  if (!item.preWeddingDate && !item.preWeddingTime && !item.preWeddingLocation) return '';
+
+  const scheduleParts = [];
+  if (item.preWeddingDate) scheduleParts.push(formatDate(item.preWeddingDate));
+  if (item.preWeddingTime) scheduleParts.push(`às ${item.preWeddingTime}`);
+  const schedule = scheduleParts.join(' ');
+  const location = item.preWeddingLocation ? escapeHtml(item.preWeddingLocation) : '';
+
+  if (schedule && location) {
+    return `<div class="table-cell__secondary">Pré wedding: ${schedule} — ${location}</div>`;
+  }
+  if (schedule) {
+    return `<div class="table-cell__secondary">Pré wedding: ${schedule}</div>`;
+  }
+  return `<div class="table-cell__secondary">Pré wedding: ${location}</div>`;
+}
+
+function formatMakingOfBrideDetails(item) {
+  if (item.serviceType !== SERVICE_TYPES.MAKING_OF_BRIDE) return '';
+  if (!item.makingOfLocation && !item.makingOfSchedule) return '';
+
+  const schedule = item.makingOfSchedule
+    ? isTimeValue(item.makingOfSchedule)
+      ? `às ${escapeHtml(item.makingOfSchedule)}`
+      : escapeHtml(item.makingOfSchedule)
+    : '';
+  const location = item.makingOfLocation ? escapeHtml(item.makingOfLocation) : '';
+
+  if (schedule && location) {
+    return `<div class="table-cell__secondary">Making of noiva: ${schedule} — ${location}</div>`;
+  }
+  if (schedule) {
+    return `<div class="table-cell__secondary">Making of noiva: ${schedule}</div>`;
+  }
+  return `<div class="table-cell__secondary">Making of noiva: ${location}</div>`;
 }
 
 function buildContractCardHTML(contract) {
@@ -402,11 +442,8 @@ async function renderContractDetail(container, contractId) {
                       <td>${SERVICE_TYPE_LABELS[item.serviceType] || item.serviceType}</td>
                       <td>
                         ${escapeHtml(item.description)}
-                        ${
-                          item.preWeddingDate
-                            ? `<div class="table-cell__secondary">Pré wedding: ${formatDate(item.preWeddingDate)}</div>`
-                            : ''
-                        }
+                        ${formatPreWeddingDetails(item)}
+                        ${formatMakingOfBrideDetails(item)}
                       </td>
                       <td>${formatCurrency(item.amount)}</td>
                     </tr>
