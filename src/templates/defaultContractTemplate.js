@@ -81,7 +81,10 @@ export const TEMPLATE_PLACEHOLDERS_HELP = `
 <h4>Placeholders disponíveis</h4>
 <p class="text-muted">Use <code>{{variavel}}</code> no modelo. Para listas, use blocos <code>{{#items}}...{{/items}}</code>.</p>
 <ul class="template-help-list">
-  <li><code>{{client.name}}</code> — Nome do cliente</li>
+  <li><code>{{client.name}}</code> — Nome do cliente (noivo/a 1 em casamentos)</li>
+  <li><code>{{client.displayName}}</code> — Nome exibido (ex: Maria e João)</li>
+  <li><code>{{client.partnerName}}</code> — Nome do segundo noivo(a)</li>
+  <li><code>{{client.partnerDocumentFormatted}}</code> — CPF do segundo noivo(a)</li>
   <li><code>{{client.documentFormatted}}</code> — CPF/CNPJ</li>
   <li><code>{{client.phoneFormatted}}</code> — Telefone</li>
   <li><code>{{client.whatsappFormatted}}</code> — WhatsApp</li>

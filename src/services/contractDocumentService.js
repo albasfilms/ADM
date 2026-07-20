@@ -6,8 +6,10 @@ import {
   EVENT_TYPE_LABELS,
   PAYMENT_METHOD_LABELS,
   PERSON_TYPE_LABELS,
+  PERSON_TYPES,
   SERVICE_TYPE_LABELS,
 } from '../utils/constants.js';
+import { getClientDisplayName } from './clientService.js';
 import { resolveContractEventType } from '../utils/contractEventType.js';
 import { formatDocument, formatPhone } from '../utils/validators.js';
 
@@ -46,9 +48,15 @@ export function buildContractDocumentContext({ contract, client, items = [], ins
 
   const clientContext = {
     name: formatOptional(client?.name || contract.clientName),
+    displayName: formatOptional(getClientDisplayName(client) || contract.clientName),
     personTypeLabel: PERSON_TYPE_LABELS[client?.personType] || 'Pessoa física',
     documentFormatted: client?.document
       ? formatDocument(client.document, client.personType)
+      : '—',
+    isCouple: client?.isCouple ? 'Sim' : 'Não',
+    partnerName: formatOptional(client?.partnerName),
+    partnerDocumentFormatted: client?.partnerDocument
+      ? formatDocument(client.partnerDocument, PERSON_TYPES.INDIVIDUAL)
       : '—',
     phoneFormatted: client?.phone ? formatPhone(client.phone) : '—',
     whatsappFormatted: client?.whatsapp ? formatPhone(client.whatsapp) : '—',

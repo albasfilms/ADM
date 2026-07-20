@@ -120,5 +120,19 @@ export function validateClientForm(data) {
     errors.whatsapp = 'WhatsApp inválido.';
   }
 
+  const isCouple = data.isCouple === true || data.isCouple === 'true';
+
+  if (isCouple && data.personType !== PERSON_TYPES.COMPANY) {
+    if (!data.partnerName?.trim()) {
+      errors.partnerName = 'Informe o nome completo do segundo noivo(a).';
+    }
+
+    if (!data.partnerDocument?.trim()) {
+      errors.partnerDocument = 'Informe o CPF do segundo noivo(a).';
+    } else if (!isValidDocument(data.partnerDocument, PERSON_TYPES.INDIVIDUAL)) {
+      errors.partnerDocument = 'CPF do segundo noivo(a) inválido.';
+    }
+  }
+
   return errors;
 }

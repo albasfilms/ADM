@@ -5,6 +5,9 @@ import {
   updateClient,
   archiveClient,
   getClientContracts,
+  getClientDisplayName,
+  resolveClientCoupleFields,
+  splitCoupleName,
 } from '../services/clientService.js';
 import { createModal } from '../components/Modal.js';
 import { showConfirmModal } from '../components/ConfirmModal.js';
@@ -24,9 +27,9 @@ import {
   formatPhone,
   formatDocument,
 } from '../utils/validators.js';
-import { parseQuickClientText } from '../utils/parseQuickClient.js';
-import { formatDate, formatDateTime } from '../utils/dates.js';
-import { escapeHtml, renderIcons, showToast } from '../utils/dom.js';
+import { parseQuickClientText, QUICK_CLIENT_COUPLE_TEMPLATE } from '../utils/parseQuickClient.js';
+import { copyToClipboard } from '../utils/whatsapp.js';
+import { escapeHtml, renderIcons, showToast, getFirestoreErrorMessage } from '../utils/dom.js';
 let listState = {
   search: '',
   status: 'all',
@@ -51,6 +54,65 @@ function getClientIdFromPath() {
   return match ? match[1] : null;
 }
 
+function setCoupleMode(form, enabled, { preserveNames = true } = {}) {
+  const coupleFields = form.querySelector('#client-couple-fields');
+  const coupleToggleWrap = form.querySelector('#client-couple-toggle');
+  const isCoupleCheckbox = form.querySelector('#client-isCouple');
+  const nameLabel = form.querySelector('[data-name-label]');
+  const docLabelEl = form.querySelector('[data-doc-label]');
+  const nameInput = form.querySelector('#client-name');
+  const partnerNameInput = form.querySelector('#client-partnerName');
+  const personTypeSelect = form.querySelector('#client-personType');
+  const personType = personTypeSelect?.value || PERSON_TYPES.INDIVIDUAL;
+
+  if (!coupleFields || !isCoupleCheckbox) return;
+
+  const isCompany = personType === PERSON_TYPES.COMPANY;
+  const active = enabled && !isCompany;
+
+  isCoupleCheckbox.checked = active;
+  coupleFields.hidden = !active;
+  if (coupleToggleWrap) {
+    coupleToggleWrap.hidden = isCompany;
+  }
+
+  if (nameLabel) {
+    nameLabel.textContent = active ? 'Noiva *' : 'Nome completo *';
+  }
+
+  if (docLabelEl) {
+    docLabelEl.textContent = active ? 'CPF noiva' : isCompany ? 'CNPJ' : 'CPF';
+  }
+
+  const partnerNameLabel = form.querySelector('[data-partner-name-label]');
+  const partnerDocLabel = form.querySelector('[data-partner-doc-label]');
+  if (partnerNameLabel) {
+    partnerNameLabel.textContent = active ? 'Noivo *' : 'Nome completo (noivo/a 2) *';
+  }
+  if (partnerDocLabel) {
+    partnerDocLabel.textContent = active ? 'CPF noivo *' : 'CPF (noivo/a 2) *';
+  }
+
+  if (!active && preserveNames && partnerNameInput?.value.trim() && nameInput) {
+    const first = nameInput.value.trim();
+    const second = partnerNameInput.value.trim();
+    if (first && second && !/\s+e\s+/i.test(first)) {
+      nameInput.value = `${first} e ${second}`;
+    }
+    partnerNameInput.value = '';
+    const partnerDocumentInput = form.querySelector('#client-partnerDocument');
+    if (partnerDocumentInput) partnerDocumentInput.value = '';
+  }
+
+  if (active && preserveNames && nameInput && partnerNameInput && !partnerNameInput.value.trim()) {
+    const split = splitCoupleName(nameInput.value);
+    if (split.partnerName) {
+      nameInput.value = split.name;
+      partnerNameInput.value = split.partnerName;
+    }
+  }
+}
+
 function applyQuickClientParse(form, parsed) {
   const personTypeSelect = form.querySelector('#client-personType');
   const documentInput = form.querySelector('#client-document');
@@ -67,6 +129,23 @@ function applyQuickClientParse(form, parsed) {
 
   if (parsed.document) {
     documentInput.value = formatDocument(parsed.document, personTypeSelect.value);
+  }
+
+  if (parsed.isCouple) {
+    if (parsed.partnerName) {
+      form.querySelector('#client-partnerName').value = parsed.partnerName;
+    }
+
+    if (parsed.partnerDocument) {
+      form.querySelector('#client-partnerDocument').value = formatDocument(
+        parsed.partnerDocument,
+        PERSON_TYPES.INDIVIDUAL
+      );
+    }
+
+    setCoupleMode(form, true);
+  } else {
+    setCoupleMode(form, false);
   }
 
   if (parsed.phone) {
@@ -94,6 +173,7 @@ function applyQuickClientParse(form, parsed) {
 function bindQuickClientRegister(form) {
   const quickInput = form.querySelector('#client-quick-register');
   const parseBtn = form.querySelector('#client-quick-parse-btn');
+  const copyTemplateBtn = form.querySelector('#client-quick-copy-template-btn');
   if (!quickInput || !parseBtn) return;
 
   const runParse = () => {
@@ -119,6 +199,16 @@ function bindQuickClientRegister(form) {
   quickInput.addEventListener('paste', () => {
     setTimeout(runParse, 0);
   });
+
+  copyTemplateBtn?.addEventListener('click', async () => {
+    try {
+      await copyToClipboard(QUICK_CLIENT_COUPLE_TEMPLATE);
+      showToast('Modelo copiado! Envie para os noivos preencherem.', 'success');
+    } catch (error) {
+      console.error('[Clients] Erro ao copiar modelo:', error);
+      showToast('Não foi possível copiar o modelo.', 'error');
+    }
+  });
 }
 
 function buildClientForm(client = null) {
@@ -126,8 +216,14 @@ function buildClientForm(client = null) {
   form.className = 'client-form';
   form.noValidate = true;
 
+  const coupleFields = resolveClientCoupleFields(client);
+  const isCoupleMode = client ? coupleFields.isCouple : true;
   const personType = client?.personType || PERSON_TYPES.INDIVIDUAL;
-  const docLabel = personType === PERSON_TYPES.COMPANY ? 'CNPJ' : 'CPF';
+  const coupleActive = isCoupleMode && personType !== PERSON_TYPES.COMPANY;
+  const docLabel = coupleActive ? 'CPF noiva' : personType === PERSON_TYPES.COMPANY ? 'CNPJ' : 'CPF';
+  const nameLabel = coupleActive ? 'Noiva *' : 'Nome completo *';
+  const partnerNameLabel = coupleActive ? 'Noivo *' : 'Nome completo (noivo/a 2) *';
+  const partnerDocLabel = coupleActive ? 'CPF noivo *' : 'CPF (noivo/a 2) *';
 
   form.innerHTML = `
     ${
@@ -139,24 +235,84 @@ function buildClientForm(client = null) {
       <textarea
         class="form-field__input form-field__textarea quick-register__input"
         id="client-quick-register"
-        rows="4"
-        placeholder="Cole as informações do cliente. Funciona com ou sem rótulos — ex: Maria e João na primeira linha"
+        rows="6"
+        placeholder="Cole aqui os dados preenchidos pelos noivos"
       ></textarea>
       <div class="quick-register__actions">
+        <button type="button" class="btn btn--secondary btn--sm" id="client-quick-copy-template-btn">
+          <i data-lucide="copy" aria-hidden="true"></i> Copiar modelo
+        </button>
         <button type="button" class="btn btn--secondary btn--sm" id="client-quick-parse-btn">
           Preencher automaticamente
         </button>
-        <span class="quick-register__hint text-muted">Funciona com texto livre: a primeira linha vira o nome se não tiver rótulo.</span>
+        <span class="quick-register__hint text-muted">Copie o modelo e envie aos noivos; depois cole aqui a resposta.</span>
       </div>
     </div>
     `
     }
     <div class="form-grid">
+      <div class="form-field form-field--full" id="client-couple-toggle" ${personType === PERSON_TYPES.COMPANY ? 'hidden' : ''}>
+        <label class="form-checkbox" for="client-isCouple">
+          <input
+            type="checkbox"
+            id="client-isCouple"
+            name="isCouple"
+            value="true"
+            ${coupleActive ? 'checked' : ''}
+          />
+          Cadastro de noivos (casamento)
+        </label>
+      </div>
+
       <div class="form-field form-field--full">
-        <label class="form-field__label" for="client-name">Nome completo *</label>
+        <label class="form-field__label" for="client-name" data-name-label>${nameLabel}</label>
         <input class="form-field__input" id="client-name" name="name" required
-          value="${escapeHtml(client?.name || '')}" placeholder="Nome do cliente" />
+          value="${escapeHtml(coupleFields.name || '')}" placeholder="Nome da noiva ou cliente" />
         <span class="form-field__error" data-error="name" hidden></span>
+      </div>
+
+      <div class="form-field">
+        <label class="form-field__label" for="client-document" data-doc-label>${docLabel}</label>
+        <input class="form-field__input" id="client-document" name="document"
+          value="${escapeHtml(client?.document ? formatDocument(client.document, personType) : '')}"
+          placeholder="${personType === PERSON_TYPES.COMPANY ? '00.000.000/0000-00' : '000.000.000-00'}" />
+        <span class="form-field__error" data-error="document" hidden></span>
+      </div>
+
+      <div
+        class="client-couple-fields form-field form-field--full"
+        id="client-couple-fields"
+        ${coupleActive ? '' : 'hidden'}
+      >
+        <div class="form-grid">
+          <div class="form-field form-field--full">
+            <label class="form-field__label" for="client-partnerName" data-partner-name-label>${partnerNameLabel}</label>
+            <input
+              class="form-field__input"
+              id="client-partnerName"
+              name="partnerName"
+              value="${escapeHtml(coupleFields.partnerName || '')}"
+              placeholder="Nome completo do noivo"
+            />
+            <span class="form-field__error" data-error="partnerName" hidden></span>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="client-partnerDocument" data-partner-doc-label>${partnerDocLabel}</label>
+            <input
+              class="form-field__input"
+              id="client-partnerDocument"
+              name="partnerDocument"
+              value="${escapeHtml(
+                coupleFields.partnerDocument
+                  ? formatDocument(coupleFields.partnerDocument, PERSON_TYPES.INDIVIDUAL)
+                  : ''
+              )}"
+              placeholder="000.000.000-00"
+            />
+            <span class="form-field__error" data-error="partnerDocument" hidden></span>
+          </div>
+        </div>
       </div>
 
       <div class="form-field">
@@ -166,14 +322,6 @@ function buildClientForm(client = null) {
           <option value="${PERSON_TYPES.COMPANY}" ${personType === PERSON_TYPES.COMPANY ? 'selected' : ''}>Pessoa jurídica</option>
         </select>
         <span class="form-field__error" data-error="personType" hidden></span>
-      </div>
-
-      <div class="form-field">
-        <label class="form-field__label" for="client-document" data-doc-label>${docLabel}</label>
-        <input class="form-field__input" id="client-document" name="document"
-          value="${escapeHtml(client?.document ? formatDocument(client.document, personType) : '')}"
-          placeholder="${personType === PERSON_TYPES.COMPANY ? '00.000.000/0000-00' : '000.000.000-00'}" />
-        <span class="form-field__error" data-error="document" hidden></span>
       </div>
 
       <div class="form-field">
@@ -253,17 +401,38 @@ function buildClientForm(client = null) {
   const docLabelEl = form.querySelector('[data-doc-label]');
   const phoneInput = form.querySelector('#client-phone');
   const whatsappInput = form.querySelector('#client-whatsapp');
+  const isCoupleCheckbox = form.querySelector('#client-isCouple');
+  const partnerDocumentInput = form.querySelector('#client-partnerDocument');
 
   personTypeSelect.addEventListener('change', () => {
     const type = personTypeSelect.value;
-    docLabelEl.textContent = type === PERSON_TYPES.COMPANY ? 'CNPJ' : 'CPF';
+    const coupleToggleWrap = form.querySelector('#client-couple-toggle');
+
+    if (type === PERSON_TYPES.COMPANY) {
+      setCoupleMode(form, false);
+    } else if (coupleToggleWrap) {
+      coupleToggleWrap.hidden = false;
+    }
+
+    const coupleActive = isCoupleCheckbox?.checked && type !== PERSON_TYPES.COMPANY;
+
+    docLabelEl.textContent =
+      coupleActive ? 'CPF noiva' : type === PERSON_TYPES.COMPANY ? 'CNPJ' : 'CPF';
     documentInput.placeholder =
       type === PERSON_TYPES.COMPANY ? '00.000.000/0000-00' : '000.000.000-00';
     documentInput.value = formatDocument(documentInput.value, type);
   });
 
+  isCoupleCheckbox?.addEventListener('change', () => {
+    setCoupleMode(form, isCoupleCheckbox.checked);
+  });
+
   documentInput.addEventListener('input', () => {
     documentInput.value = formatDocument(documentInput.value, personTypeSelect.value);
+  });
+
+  partnerDocumentInput?.addEventListener('input', () => {
+    partnerDocumentInput.value = formatDocument(partnerDocumentInput.value, PERSON_TYPES.INDIVIDUAL);
   });
 
   phoneInput.addEventListener('input', () => {
@@ -283,6 +452,13 @@ function buildClientForm(client = null) {
 
 function getFormData(form) {
   const data = Object.fromEntries(new FormData(form));
+  data.isCouple = form.querySelector('#client-isCouple')?.checked || false;
+
+  if (!data.isCouple) {
+    data.partnerName = '';
+    data.partnerDocument = '';
+  }
+
   if (!form.querySelector('[name="status"]')) {
     data.status = CLIENT_STATUS.ACTIVE;
   }
@@ -415,7 +591,7 @@ async function renderClientDetail(container, clientId) {
 
     const contracts = await getClientContracts(clientId);
 
-    container.querySelector('#detail-name').textContent = client.name;
+    container.querySelector('#detail-name').textContent = getClientDisplayName(client);
     container.querySelector('#detail-subtitle').appendChild(
       createStatusBadge(client.status)
     );
@@ -443,6 +619,9 @@ async function renderClientDetail(container, clientId) {
     const docFormatted = client.document
       ? formatDocument(client.document, client.personType)
       : '—';
+    const partnerDocFormatted = client.partnerDocument
+      ? formatDocument(client.partnerDocument, PERSON_TYPES.INDIVIDUAL)
+      : '—';
 
     content.innerHTML = `
       <div class="detail-grid">
@@ -451,7 +630,18 @@ async function renderClientDetail(container, clientId) {
           <div class="card__body">
             <dl class="detail-list">
               <div class="detail-list__item"><dt>Tipo</dt><dd>${personLabel}</dd></div>
+              ${
+                client.isCouple
+                  ? `
+              <div class="detail-list__item"><dt>Noivo/a 1</dt><dd>${escapeHtml(client.name || '—')}</dd></div>
+              <div class="detail-list__item"><dt>CPF (noivo/a 1)</dt><dd>${docFormatted}</dd></div>
+              <div class="detail-list__item"><dt>Noivo/a 2</dt><dd>${escapeHtml(client.partnerName || '—')}</dd></div>
+              <div class="detail-list__item"><dt>CPF (noivo/a 2)</dt><dd>${partnerDocFormatted}</dd></div>
+              `
+                  : `
               <div class="detail-list__item"><dt>${client.personType === PERSON_TYPES.COMPANY ? 'CNPJ' : 'CPF'}</dt><dd>${docFormatted}</dd></div>
+              `
+              }
               <div class="detail-list__item"><dt>Telefone</dt><dd>${client.phone ? formatPhone(client.phone) : '—'}</dd></div>
               <div class="detail-list__item"><dt>WhatsApp</dt><dd>${client.whatsapp ? formatPhone(client.whatsapp) : '—'}</dd></div>
               <div class="detail-list__item"><dt>E-mail</dt><dd>${client.email || '—'}</dd></div>
@@ -533,7 +723,7 @@ async function renderClientDetail(container, clientId) {
       container.querySelector('#archive-client-btn')?.addEventListener('click', () => {
         showConfirmModal({
           title: 'Arquivar cliente',
-          message: `Deseja arquivar <strong>${escapeHtml(client.name)}</strong>? O cliente ficará inativo, mas os dados serão preservados.`,
+          message: `Deseja arquivar <strong>${escapeHtml(getClientDisplayName(client))}</strong>? O cliente ficará inativo, mas os dados serão preservados.`,
           confirmLabel: 'Arquivar',
           onConfirm: async () => {
             await archiveClient(clientId);
@@ -615,7 +805,7 @@ async function loadClientsList(listContainer, paginationContainer) {
               (client) => `
             <tr data-client-id="${client.id}">
               <td>
-                <div class="table-cell__primary">${escapeHtml(client.name)}</div>
+                <div class="table-cell__primary">${escapeHtml(getClientDisplayName(client))}</div>
                 <div class="table-cell__secondary">${PERSON_TYPE_LABELS[client.personType] || ''}</div>
               </td>
               <td>
@@ -663,7 +853,11 @@ async function loadClientsList(listContainer, paginationContainer) {
     );
   } catch (error) {
     console.error('[Clients] Erro ao listar:', error);
-    listContainer.innerHTML = `<p class="text-error">Erro ao carregar clientes. Verifique as regras do Firestore.</p>`;
+    const message = getFirestoreErrorMessage(
+      error,
+      'Erro ao carregar clientes. Verifique login, índices e regras do Firestore.'
+    );
+    listContainer.innerHTML = `<p class="text-error">${escapeHtml(message)}</p>`;
     paginationContainer.innerHTML = '';
   }
 }

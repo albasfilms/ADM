@@ -562,6 +562,20 @@
   font-size: var(--font-size-sm);
 }
 
+.client-couple-fields {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+  background: var(--color-gray-50);
+}
+
+.client-couple-fields__title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
 /* Toolbar */
 .toolbar {
   display: flex;
@@ -3088,6 +3102,23 @@
 .contract-document-modal__preview .contract-doc__signature-line {
   border-top: 1px solid #111;
   margin: 2rem 0 0.35rem;
+}
+
+.quick-register__hint {
+  font-size: var(--text-sm);
+}
+
+.client-couple-fields {
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted, rgba(0, 0, 0, 0.02));
+}
+
+.client-couple-fields__title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
 .form-checkbox {

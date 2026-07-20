@@ -2,8 +2,21 @@ import { BRAZILIAN_STATES, PERSON_TYPES } from './constants.js';
 import { onlyDigits } from './validators.js';
 
 const FIELD_LABELS = {
-  name: ['nome', 'name', 'cliente', 'noivos', 'casal'],
-  cpf: ['cpf'],
+  name: ['nome', 'name', 'cliente', 'noivos', 'casal', 'noivo 1', 'noiva 1', 'noivo(a) 1', 'noiva'],
+  partnerName: [
+    'noivo 2',
+    'noiva 2',
+    'noivo(a) 2',
+    'segundo noivo',
+    'segunda noiva',
+    'conjuge',
+    'cônjuge',
+    'parceiro',
+    'parceira',
+    'noivo',
+  ],
+  cpf: ['cpf noiva', 'cpf 1', 'cpf noivo 1', 'cpf noiva 1', 'cpf'],
+  partnerDocument: ['cpf noivo', 'cpf 2', 'cpf noivo 2', 'cpf noiva 2', 'cpf segundo', 'cpf do segundo'],
   cnpj: ['cnpj'],
   document: ['documento', 'doc'],
   phone: ['telefone', 'tel', 'celular', 'fone', 'cel'],
@@ -31,11 +44,32 @@ function normalizeText(value = '') {
     .trim();
 }
 
+export const QUICK_CLIENT_COUPLE_TEMPLATE = `Noiva: Maria Silva
+CPF noiva: 123.456.789-01
+Noivo: João Santos
+CPF noivo: 987.654.321-00
+WhatsApp: (41) 99999-9999
+E-mail: maria@email.com
+Instagram: @mariasilva
+Endereço: Rua das Flores, 123 - Centro
+Cidade: Curitiba
+Estado: PR
+Observações: Data do casamento 15/08/2026`;
+
 function detectField(label) {
   const normalized = normalizeText(label);
+  const entries = [];
 
   for (const [field, labels] of Object.entries(FIELD_LABELS)) {
-    if (labels.some((item) => normalized === item || normalized.startsWith(`${item} `))) {
+    for (const item of labels) {
+      entries.push({ field, item, len: item.length });
+    }
+  }
+
+  entries.sort((a, b) => b.len - a.len);
+
+  for (const { field, item } of entries) {
+    if (normalized === item || normalized.startsWith(`${item} `)) {
       return field;
     }
   }
@@ -94,8 +128,34 @@ function assignField(result, field, value) {
   if (!value) return;
 
   if (field === 'cpf') {
-    result.document = value;
+    if (!result.document) {
+      result.document = value;
+    } else if (!result.partnerDocument) {
+      result.partnerDocument = value;
+      result.isCouple = true;
+    }
     result.personType = PERSON_TYPES.INDIVIDUAL;
+    return;
+  }
+
+  if (field === 'partnerDocument') {
+    result.partnerDocument = value;
+    result.isCouple = true;
+    result.personType = PERSON_TYPES.INDIVIDUAL;
+    return;
+  }
+
+  if (field === 'partnerName') {
+    result.partnerName = value;
+    result.isCouple = true;
+    return;
+  }
+
+  if (field === 'name') {
+    result.name = value;
+    if (/\s+e\s+/i.test(value) || result.partnerName) {
+      result.isCouple = true;
+    }
     return;
   }
 
@@ -128,6 +188,54 @@ function assignField(result, field, value) {
   }
 
   result[field] = value;
+}
+
+function extractAllUniqueCpfs(text = '') {
+  const cpfs = [];
+  const seen = new Set();
+
+  [...String(text).matchAll(new RegExp(CPF_REGEX.source, 'g'))].forEach((match) => {
+    const cpf = match[0];
+    if (isBarePhoneLine(cpf)) return;
+
+    const digits = onlyDigits(cpf);
+    if (digits.length !== 11 || seen.has(digits)) return;
+
+    seen.add(digits);
+    cpfs.push(cpf);
+  });
+
+  return cpfs;
+}
+
+function applyCoupleCpfsFromText(text, result) {
+  if (result.personType === PERSON_TYPES.COMPANY) return;
+
+  const cpfs = extractAllUniqueCpfs(text);
+  if (cpfs.length === 0) return;
+
+  if (!result.document) {
+    [result.document] = cpfs;
+    result.personType = PERSON_TYPES.INDIVIDUAL;
+  }
+
+  const partnerCandidate = cpfs.find((cpf) => onlyDigits(cpf) !== onlyDigits(result.document));
+  if (partnerCandidate) {
+    result.partnerDocument = partnerCandidate;
+    result.isCouple = true;
+    result.personType = PERSON_TYPES.INDIVIDUAL;
+  }
+}
+
+function applyCoupleNameSplit(result) {
+  if (!result.name || result.partnerName) return;
+
+  const split = result.name.split(/\s+e\s+/i);
+  if (split.length === 2 && split[0]?.trim() && split[1]?.trim()) {
+    result.name = split[0].trim();
+    result.partnerName = split[1].trim();
+    result.isCouple = true;
+  }
 }
 
 function isBarePhoneLine(line) {
@@ -168,8 +276,8 @@ function extractFromLine(line, result, usedLines) {
     return true;
   }
 
-  if (!result.document) {
-    const cnpj = line.match(CNPJ_REGEX)?.[0];
+  if (!result.document || !result.partnerDocument) {
+    const cnpj = !result.document ? line.match(CNPJ_REGEX)?.[0] : null;
     if (cnpj) {
       result.document = cnpj;
       result.personType = PERSON_TYPES.COMPANY;
@@ -179,8 +287,13 @@ function extractFromLine(line, result, usedLines) {
 
     const cpf = line.match(CPF_REGEX)?.[0];
     if (cpf && !isBarePhoneLine(line)) {
-      result.document = cpf;
-      result.personType = PERSON_TYPES.INDIVIDUAL;
+      if (!result.document) {
+        result.document = cpf;
+        result.personType = PERSON_TYPES.INDIVIDUAL;
+      } else if (onlyDigits(cpf) !== onlyDigits(result.document)) {
+        result.partnerDocument = cpf;
+        result.isCouple = true;
+      }
       usedLines.add(line);
       return true;
     }
@@ -247,6 +360,9 @@ export function parseQuickClientText(text = '') {
     name: '',
     personType: PERSON_TYPES.INDIVIDUAL,
     document: '',
+    isCouple: false,
+    partnerName: '',
+    partnerDocument: '',
     phone: '',
     whatsapp: '',
     email: '',
@@ -298,6 +414,13 @@ export function parseQuickClientText(text = '') {
 
   if (result.whatsapp && !result.phone) {
     result.phone = result.whatsapp;
+  }
+
+  applyCoupleCpfsFromText(text, result);
+
+  if (result.isCouple || result.partnerDocument || result.partnerName) {
+    result.isCouple = true;
+    applyCoupleNameSplit(result);
   }
 
   const leftover = unlabeledLines.filter((line) => !usedLines.has(line));

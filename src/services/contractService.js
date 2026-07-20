@@ -16,6 +16,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase/config.js';
+import { getClientDisplayName } from './clientService.js';
 import {
   CONTRACT_STATUS,
   INSTALLMENT_STATUS,
@@ -178,7 +179,7 @@ export async function getContractFull(contractId) {
 function buildContractDoc(data, client, totalAmount) {
   return {
     clientId: data.clientId,
-    clientName: client.name,
+    clientName: getClientDisplayName(client),
     title: data.title.trim(),
     description: data.description?.trim() || '',
     eventType: data.eventType,
