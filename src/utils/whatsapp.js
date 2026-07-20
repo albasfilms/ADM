@@ -2,6 +2,8 @@ import { formatCurrency } from './currency.js';
 import { formatDate } from './dates.js';
 import { EVENT_TYPE_LABELS } from './constants.js';
 import { resolveContractEventType } from './contractEventType.js';
+import { escapeHtml } from './dom.js';
+import { formatPhone } from './validators.js';
 import {
   getInstallmentRemaining,
   isDueToday,
@@ -91,8 +93,29 @@ export async function copyToClipboard(text) {
   await navigator.clipboard.writeText(text);
 }
 
+function normalizeBrazilPhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('55') && digits.length >= 12) return digits;
+  return `55${digits}`;
+}
+
+export function buildWhatsAppHref(phone, message = '') {
+  const digits = normalizeBrazilPhone(phone);
+  if (!digits) return '';
+  const url = `https://wa.me/${digits}`;
+  return message ? `${url}?text=${encodeURIComponent(message)}` : url;
+}
+
+export function renderWhatsAppContactLink(phone) {
+  if (!phone) return '—';
+  const formatted = formatPhone(phone);
+  const href = buildWhatsAppHref(phone);
+  return `<a href="${href}" target="_blank" rel="noopener" class="link">${escapeHtml(formatted)}</a>`;
+}
+
 export function openWhatsApp(phone, message) {
-  const digits = String(phone).replace(/\D/g, '');
-  const url = `https://wa.me/55${digits}?text=${encodeURIComponent(message)}`;
+  const url = buildWhatsAppHref(phone, message);
+  if (!url) return;
   window.open(url, '_blank', 'noopener');
 }

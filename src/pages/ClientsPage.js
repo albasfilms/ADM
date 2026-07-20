@@ -18,11 +18,13 @@ import {
   PERSON_TYPE_LABELS,
   PAGE_SIZE,
 } from '../utils/constants.js';
-import { formatPhone, formatDocument } from '../utils/validators.js';
+import { formatDocument } from '../utils/validators.js';
 import { formatDate, formatDateTime } from '../utils/dates.js';
 import { escapeHtml, renderIcons, showToast, getFirestoreErrorMessage } from '../utils/dom.js';
+import { buildWhatsAppHref, renderWhatsAppContactLink } from '../utils/whatsapp.js';
 import { getCurrentUser } from '../appState.js';
 import { canDeleteClients } from '../utils/permissions.js';
+
 let listState = {
   search: '',
   status: 'all',
@@ -110,7 +112,7 @@ async function renderClientDetail(container, clientId) {
       </button>
       ${
         client.whatsapp || client.phone
-          ? `<a href="https://wa.me/55${client.whatsapp || client.phone}" target="_blank" rel="noopener" class="btn btn--secondary">
+          ? `<a href="${buildWhatsAppHref(client.whatsapp || client.phone)}" target="_blank" rel="noopener" class="btn btn--secondary">
               <i data-lucide="message-circle" aria-hidden="true"></i> WhatsApp
             </a>`
           : ''
@@ -156,7 +158,7 @@ async function renderClientDetail(container, clientId) {
               <div class="detail-list__item"><dt>${client.personType === PERSON_TYPES.COMPANY ? 'CNPJ' : 'CPF'}</dt><dd>${docFormatted}</dd></div>
               `
               }
-              <div class="detail-list__item"><dt>WhatsApp</dt><dd>${client.whatsapp || client.phone ? formatPhone(client.whatsapp || client.phone) : '—'}</dd></div>
+              <div class="detail-list__item"><dt>WhatsApp</dt><dd>${renderWhatsAppContactLink(client.whatsapp || client.phone)}</dd></div>
               <div class="detail-list__item"><dt>E-mail</dt><dd>${client.email || '—'}</dd></div>
               <div class="detail-list__item"><dt>Instagram</dt><dd>${client.instagram || '—'}</dd></div>
             </dl>
@@ -342,7 +344,7 @@ async function loadClientsList(listContainer, paginationContainer) {
                 <div class="table-cell__secondary">${PERSON_TYPE_LABELS[client.personType] || ''}</div>
               </td>
               <td>
-                <div class="table-cell__primary">${client.whatsapp || client.phone ? formatPhone(client.whatsapp || client.phone) : '—'}</div>
+                <div class="table-cell__primary">${renderWhatsAppContactLink(client.whatsapp || client.phone)}</div>
                 <div class="table-cell__secondary">${client.email || ''}</div>
               </td>
               <td>${client.city ? `${escapeHtml(client.city)}${client.state ? ` / ${client.state}` : ''}` : '—'}</td>

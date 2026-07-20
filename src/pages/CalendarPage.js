@@ -365,13 +365,6 @@ function renderMonthGrid({ year, month, eventsByDate, budgetEntries, blockedDays
   `;
 }
 
-function isPastMonth(year, month) {
-  const now = new Date();
-  if (year < now.getFullYear()) return true;
-  if (year > now.getFullYear()) return false;
-  return month < now.getMonth();
-}
-
 function isCurrentMonth(year, month) {
   const now = new Date();
   return year === now.getFullYear() && month === now.getMonth();
@@ -387,7 +380,6 @@ function renderMiniMonth(year, month, context) {
     })
     .join('');
   const monthClasses = [
-    isPastMonth(year, month) ? 'calendar-mini-month--past' : '',
     isCurrentMonth(year, month) ? 'calendar-mini-month--current' : '',
   ]
     .filter(Boolean)

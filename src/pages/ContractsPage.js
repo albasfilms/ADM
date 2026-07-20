@@ -24,7 +24,7 @@ import {
   updateContractTotals,
 } from '../services/paymentService.js';
 import { getClientById } from '../services/clientService.js';
-import { buildWhatsAppSummary, buildInstallmentCollectionMessage, copyToClipboard, openWhatsApp } from '../utils/whatsapp.js';
+import { buildWhatsAppSummary, buildInstallmentCollectionMessage, copyToClipboard, openWhatsApp, renderWhatsAppContactLink } from '../utils/whatsapp.js';
 import { getInstallmentRemaining } from '../utils/installmentStatus.js';
 import {
   CONTRACT_STATUS,
@@ -105,6 +105,8 @@ function formatMakingOfBrideDetails(item) {
 function buildContractCardHTML(contract) {
   const eventLabel = EVENT_TYPE_LABELS[resolveContractEventType(contract)] || 'Evento';
   const location = formatEventLocation(contract);
+  const title = contract.title || '';
+  const clientName = contract.clientName || '';
   const eventTs = getEventTimestamp(contract);
   const countdown = eventTs ? formatDaysUntilEvent(eventTs) : null;
   const percent =
@@ -113,11 +115,11 @@ function buildContractCardHTML(contract) {
       : 0;
 
   return `
-    <article class="contract-card" data-contract-id="${contract.id}" tabindex="0" role="button" aria-label="Ver contrato ${escapeHtml(contract.title)}">
+    <article class="contract-card" data-contract-id="${contract.id}" tabindex="0" role="button" aria-label="Ver contrato ${escapeHtml(title)}">
       <div class="contract-card__header">
         <div class="contract-card__heading">
-          <h3 class="contract-card__title">${escapeHtml(contract.title)}</h3>
-          <p class="contract-card__client">${escapeHtml(contract.clientName)}</p>
+          <h3 class="contract-card__title" title="${escapeHtml(title)}">${escapeHtml(title)}</h3>
+          <p class="contract-card__client" title="${escapeHtml(clientName)}">${escapeHtml(clientName)}</p>
         </div>
         <div class="contract-card__status" data-status="${contract.id}"></div>
       </div>
@@ -144,7 +146,7 @@ function buildContractCardHTML(contract) {
         }
         <li>
           <i data-lucide="map-pin" aria-hidden="true"></i>
-          <span>${escapeHtml(location)}</span>
+          <span title="${escapeHtml(location)}">${escapeHtml(location)}</span>
         </li>
       </ul>
       <div class="contract-card__actions">
@@ -408,6 +410,7 @@ async function renderContractDetail(container, contractId) {
           <div class="card__body">
             <dl class="detail-list">
               <div class="detail-list__item"><dt>Cliente</dt><dd><a href="#/clientes/${contract.clientId}" class="link">${escapeHtml(contract.clientName)}</a></dd></div>
+              <div class="detail-list__item"><dt>WhatsApp</dt><dd>${renderWhatsAppContactLink(client?.whatsapp || client?.phone)}</dd></div>
               <div class="detail-list__item"><dt>Modelo do evento</dt><dd>${EVENT_TYPE_LABELS[resolveContractEventType(contract)] || '—'}</dd></div>
               <div class="detail-list__item"><dt>Data do evento</dt><dd>${formatDate(contract.eventDate)} ${contract.eventTime || ''}</dd></div>
               <div class="detail-list__item"><dt>Local</dt><dd>${contract.eventLocation || '—'}</dd></div>
