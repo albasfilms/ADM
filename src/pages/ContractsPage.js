@@ -239,11 +239,11 @@ async function openNewContractModal(onSaved) {
 
 async function openEditContractModal(contractId, onSaved) {
   try {
-    const [clients, { contract, items }] = await Promise.all([
-      getActiveClients(),
+    const [{ contract, items, installments }, clients] = await Promise.all([
       getContractFull(contractId),
+      getActiveClients(),
     ]);
-    openContractFormModal({ clients, contract, items, onSaved });
+    openContractFormModal({ clients, contract, items, installments, onSaved });
   } catch (error) {
     showToast('Erro ao carregar contrato.', 'error');
   }
@@ -400,7 +400,14 @@ async function renderContractDetail(container, contractId) {
                       (item) => `
                     <tr>
                       <td>${SERVICE_TYPE_LABELS[item.serviceType] || item.serviceType}</td>
-                      <td>${escapeHtml(item.description)}</td>
+                      <td>
+                        ${escapeHtml(item.description)}
+                        ${
+                          item.preWeddingDate
+                            ? `<div class="table-cell__secondary">Pré wedding: ${formatDate(item.preWeddingDate)}</div>`
+                            : ''
+                        }
+                      </td>
                       <td>${formatCurrency(item.amount)}</td>
                     </tr>
                   `

@@ -20,6 +20,10 @@ export function canDeleteContracts(user) {
   return isAdmin(user);
 }
 
+export function canDeleteClients(user) {
+  return isAdmin(user);
+}
+
 export function canDeletePayments(user) {
   return isAdmin(user);
 }

@@ -21,8 +21,10 @@ import {
   CONTRACT_STATUS,
   INSTALLMENT_STATUS,
   PAGE_SIZE,
+  PAYMENT_PLAN_TYPES,
 } from '../utils/constants.js';
 import { sumCents } from '../utils/currency.js';
+import { contractHasRecordedPayments } from '../utils/paymentPlanPresets.js';
 import { createAuditLog } from './auditService.js';
 import { getCached, invalidateCache, invalidateCacheByPrefix } from '../utils/dataCache.js';
 
@@ -176,6 +178,24 @@ export async function getContractFull(contractId) {
   return { contract, items, installments };
 }
 
+function preserveContractPaymentFields(docData, existingContract) {
+  if (!existingContract) return docData;
+
+  return {
+    ...docData,
+    entryPercent: Number(existingContract.entryPercent) || 0,
+    entryAmount: Number(existingContract.entryAmount) || 0,
+    entryPaymentMethod: existingContract.entryPaymentMethod || '',
+    paymentPlanType:
+      existingContract.paymentPlanType ||
+      docData.paymentPlanType ||
+      PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING,
+    installmentCount: Number(existingContract.installmentCount) || 0,
+    firstDueDate: existingContract.firstDueDate || null,
+    installmentIntervalMonths: Number(existingContract.installmentIntervalMonths) || 1,
+  };
+}
+
 function buildContractDoc(data, client, totalAmount) {
   return {
     clientId: data.clientId,
@@ -195,6 +215,7 @@ function buildContractDoc(data, client, totalAmount) {
     entryPercent: Number(data.entryPercent) || 0,
     entryAmount: Number(data.entryAmount) || 0,
     entryPaymentMethod: data.entryPaymentMethod || '',
+    paymentPlanType: data.paymentPlanType || PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING,
     installmentCount: Number(data.installmentCount) || 0,
     firstDueDate: data.firstDueDate ? Timestamp.fromDate(new Date(data.firstDueDate)) : null,
     installmentIntervalMonths: Number(data.installmentIntervalMonths) || 1,
@@ -228,6 +249,9 @@ export async function createContract(data, items, installments, client) {
       serviceType: item.serviceType,
       amount: item.amount,
       order: index,
+      ...(item.preWeddingDate
+        ? { preWeddingDate: Timestamp.fromDate(new Date(`${item.preWeddingDate}T12:00:00`)) }
+        : {}),
     });
   });
 
@@ -252,20 +276,35 @@ export async function createContract(data, items, installments, client) {
   return contractRef.id;
 }
 
-export async function updateContract(contractId, data, items, client, existingContract) {
+export async function updateContract(
+  contractId,
+  data,
+  items,
+  client,
+  existingContract,
+  installments = null
+) {
   const subtotalAmount = sumCents(items.map((i) => i.amount));
   const discountAmount = Number(data.discountAmount) || 0;
   const totalAmount = Math.max(0, subtotalAmount - discountAmount);
-  const receivedAmount = existingContract?.receivedAmount || 0;
   const batch = writeBatch(db);
   const contractRef = doc(db, COLLECTION, contractId);
 
-  const docData = buildContractDoc(data, client, totalAmount);
+  const existingInstallments = await getContractInstallments(contractId);
+  const hasPayments = contractHasRecordedPayments(existingInstallments);
+  const shouldReplaceInstallments = installments && !hasPayments;
+
+  const receivedAmount = shouldReplaceInstallments ? 0 : existingContract?.receivedAmount || 0;
+  let docData = buildContractDoc(data, client, totalAmount);
+  if (hasPayments) {
+    docData = preserveContractPaymentFields(docData, existingContract);
+  }
+
   batch.update(contractRef, {
     ...docData,
     receivedAmount,
     pendingAmount: Math.max(0, totalAmount - receivedAmount),
-    overdueAmount: existingContract?.overdueAmount || 0,
+    overdueAmount: shouldReplaceInstallments ? 0 : existingContract?.overdueAmount || 0,
     updatedAt: serverTimestamp(),
   });
 
@@ -281,11 +320,46 @@ export async function updateContract(contractId, data, items, client, existingCo
       serviceType: item.serviceType,
       amount: item.amount,
       order: index,
+      ...(item.preWeddingDate
+        ? { preWeddingDate: Timestamp.fromDate(new Date(`${item.preWeddingDate}T12:00:00`)) }
+        : {}),
     });
   });
 
+  if (shouldReplaceInstallments) {
+    for (const inst of existingInstallments) {
+      const paymentsSnap = await getDocs(
+        collection(db, COLLECTION, contractId, 'installments', inst.id, 'payments')
+      );
+      paymentsSnap.docs.forEach((paymentDoc) => {
+        batch.delete(
+          doc(db, COLLECTION, contractId, 'installments', inst.id, 'payments', paymentDoc.id)
+        );
+      });
+      batch.delete(doc(db, COLLECTION, contractId, 'installments', inst.id));
+    }
+
+    installments.forEach((inst) => {
+      const instRef = doc(collection(db, COLLECTION, contractId, 'installments'));
+      batch.set(instRef, {
+        number: inst.number,
+        description: inst.description,
+        expectedAmount: inst.expectedAmount,
+        dueDate: Timestamp.fromDate(inst.dueDate),
+        paidAmount: 0,
+        paymentDate: null,
+        paymentMethod: inst.number === 0 ? data.entryPaymentMethod || '' : '',
+        status: INSTALLMENT_STATUS.PENDING,
+        notes: '',
+        createdAt: serverTimestamp(),
+      });
+    });
+  }
+
   await batch.commit();
   invalidateContractsCache();
+
+  return { installmentsReplaced: shouldReplaceInstallments, hasPayments };
 }
 
 export async function cancelContract(contractId) {

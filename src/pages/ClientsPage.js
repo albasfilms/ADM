@@ -2,6 +2,7 @@ import {
   getClients,
   getClientById,
   archiveClient,
+  deleteClient,
   getClientContracts,
   getClientDisplayName,
 } from '../services/clientService.js';
@@ -20,6 +21,8 @@ import {
 import { formatPhone, formatDocument } from '../utils/validators.js';
 import { formatDate, formatDateTime } from '../utils/dates.js';
 import { escapeHtml, renderIcons, showToast, getFirestoreErrorMessage } from '../utils/dom.js';
+import { getCurrentUser } from '../appState.js';
+import { canDeleteClients } from '../utils/permissions.js';
 let listState = {
   search: '',
   status: 'all',
@@ -91,6 +94,9 @@ async function renderClientDetail(container, clientId) {
     }
 
     const contracts = await getClientContracts(clientId);
+    const user = getCurrentUser();
+    const canDelete = canDeleteClients(user);
+    const hasLinkedContracts = contracts.length > 0;
 
     container.querySelector('#detail-name').textContent = getClientDisplayName(client);
     container.querySelector('#detail-subtitle').appendChild(
@@ -112,6 +118,13 @@ async function renderClientDetail(container, clientId) {
       ${
         client.status === CLIENT_STATUS.ACTIVE
           ? `<button type="button" class="btn btn--ghost" id="archive-client-btn">Arquivar</button>`
+          : ''
+      }
+      ${
+        canDelete && !hasLinkedContracts
+          ? `<button type="button" class="btn btn--danger" id="delete-client-btn">
+              <i data-lucide="trash-2" aria-hidden="true"></i> Excluir
+            </button>`
           : ''
       }
     `;
@@ -190,6 +203,7 @@ async function renderClientDetail(container, clientId) {
       contractsList.innerHTML = `<p class="text-muted">Nenhum contrato vinculado a este cliente.</p>`;
     } else {
       contractsList.innerHTML = `
+        <p class="form-field__hint">Este cliente possui ${contracts.length} contrato(s) vinculado(s). Exclua os contratos antes de remover o cliente.</p>
         <div class="data-table-wrapper">
           <table class="data-table">
             <thead>
@@ -234,6 +248,25 @@ async function renderClientDetail(container, clientId) {
         });
       });
     }
+
+    container.querySelector('#delete-client-btn')?.addEventListener('click', () => {
+      showConfirmModal({
+        title: 'Excluir cliente',
+        message: `Deseja excluir permanentemente <strong>${escapeHtml(getClientDisplayName(client))}</strong>? Esta ação não pode ser desfeita.`,
+        confirmLabel: 'Excluir cliente',
+        onConfirm: async () => {
+          try {
+            await deleteClient(clientId, user);
+            showToast('Cliente excluído.', 'success');
+            navigateTo('/clientes');
+          } catch (error) {
+            console.error('[Clients] Erro ao excluir cliente:', error);
+            showToast(error.message || 'Não foi possível excluir o cliente.', 'error');
+            throw error;
+          }
+        },
+      });
+    });
   } catch (error) {
     console.error('[Clients] Erro ao carregar detalhe:', error);
     content.innerHTML = `<p class="text-error">Erro ao carregar cliente. Verifique sua conexão.</p>`;

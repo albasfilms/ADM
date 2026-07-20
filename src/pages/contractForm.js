@@ -3,7 +3,7 @@ import {
   createContract,
   updateContract,
 } from '../services/contractService.js';
-import { createClient, getClientById, getClientDisplayName } from '../services/clientService.js';
+import { createClient, getClientById, getClientDisplayName, validateClientSubmission } from '../services/clientService.js';
 import {
   NEW_CLIENT_ID,
   isNewClientSelected,
@@ -12,7 +12,6 @@ import {
   showClientFormErrors,
   bindContractFieldsFromClient,
 } from './clientForm.js';
-import { validateClientForm } from '../utils/validators.js';
 import {
   CONTRACT_STATUS,
   EVENT_TYPES,
@@ -51,6 +50,8 @@ import {
   getFirstDueBeforeEvent,
   getPaymentPlanParams,
   parseFormDate,
+  resolvePaymentPlanType,
+  contractHasRecordedPayments,
   toDateInputString,
 } from '../utils/paymentPlanPresets.js';
 import {
@@ -603,6 +604,78 @@ function applyPaymentPlanPreset(form) {
   syncInstallmentBreakdown(form);
 }
 
+function initializePaymentPlanForm(form, contract, installments = []) {
+  if (!contract) {
+    applyPaymentPlanPreset(form);
+    return;
+  }
+
+  const planType = resolvePaymentPlanType(contract, installments);
+  const planSelect = form.querySelector('[name="paymentPlanType"]');
+  if (planSelect) planSelect.value = planType;
+
+  applyPaymentPlanPreset(form);
+
+  const entryPercent = form.querySelector('[name="entryPercent"]');
+  if (entryPercent) entryPercent.value = String(contract.entryPercent ?? 30);
+
+  const entryAmount = form.querySelector('[name="entryAmount"]');
+  if (entryAmount && contract.entryAmount) {
+    entryAmount.value = formatCurrencyInput(contract.entryAmount);
+  }
+
+  const entryPaymentMethod = form.querySelector('[name="entryPaymentMethod"]');
+  if (entryPaymentMethod && contract.entryPaymentMethod) {
+    entryPaymentMethod.value = contract.entryPaymentMethod;
+  }
+
+  const installmentCount = form.querySelector('[name="installmentCount"]');
+  if (installmentCount) {
+    installmentCount.value = String(contract.installmentCount ?? 4);
+  }
+
+  const firstDueDate = form.querySelector('[name="firstDueDate"]');
+  if (firstDueDate && contract.firstDueDate) {
+    setFirstDueDateValue(firstDueDate, toDateInputValue(contract.firstDueDate));
+    firstDueDate.dataset.userEdited = 'true';
+  }
+
+  const intervalMonths = form.querySelector('[name="installmentIntervalMonths"]');
+  if (intervalMonths) {
+    intervalMonths.value = String(contract.installmentIntervalMonths ?? 1);
+  }
+
+  updateTotalDisplay(form);
+}
+
+function lockPaymentPlanSection(form, locked) {
+  const section = form.querySelector('.contract-form__payment-plan');
+  if (!section) return;
+
+  form.dataset.paymentPlanLocked = locked ? 'true' : 'false';
+  section.classList.toggle('payment-plan-section--locked', locked);
+
+  section.querySelectorAll('input, select, button').forEach((el) => {
+    if (el.classList.contains('form-field__info-btn')) return;
+    el.disabled = locked;
+  });
+}
+
+function getLockedPaymentFields(existingContract, installments = []) {
+  return {
+    entryPercent: existingContract.entryPercent ?? '',
+    entryAmount: existingContract.entryAmount || 0,
+    entryPaymentMethod: existingContract.entryPaymentMethod || '',
+    paymentPlanType:
+      existingContract.paymentPlanType || resolvePaymentPlanType(existingContract, installments),
+    installmentCount: existingContract.installmentCount ?? '',
+    firstDueDate: existingContract.firstDueDate
+      ? toDateInputValue(existingContract.firstDueDate)
+      : '',
+    installmentIntervalMonths: existingContract.installmentIntervalMonths ?? 1,
+  };
+}
+
 function buildPaymentPlan(form, data, totalCents) {
   const planType = getSelectedPaymentPlanType(form);
 
@@ -683,7 +756,7 @@ function getNextContractItem(form) {
 
 function getSelectedServiceTypes(form) {
   const types = [];
-  form.querySelectorAll('.contract-item-row').forEach((row) => {
+  form.querySelectorAll('.contract-item-group').forEach((row) => {
     const index = row.dataset.itemIndex;
     const serviceType = form.querySelector(`[name="itemServiceType_${index}"]`)?.value;
     if (serviceType) types.push(serviceType);
@@ -694,7 +767,7 @@ function getSelectedServiceTypes(form) {
 function syncServicePrices(form) {
   const selectedTypes = getSelectedServiceTypes(form);
 
-  form.querySelectorAll('.contract-item-row').forEach((row) => {
+  form.querySelectorAll('.contract-item-group').forEach((row) => {
     const index = row.dataset.itemIndex;
     const serviceType = form.querySelector(`[name="itemServiceType_${index}"]`)?.value;
     const amountInput = form.querySelector(`[name="itemAmount_${index}"]`);
@@ -724,6 +797,7 @@ function bindServiceItemPricing(form) {
     if (amountInput) amountInput.dataset.autoPrice = 'true';
 
     syncServicePrices(form);
+    syncServiceItemPreWeddingPanels(form);
   });
 
   itemsContainer.addEventListener('input', (event) => {
@@ -753,31 +827,56 @@ function buildItemRow(item = {}, index = 0) {
   const autoPrice = item.amount ? '' : 'true';
   const amount = item.amount || (hasCatalogPrice(serviceType) ? getServicePrice(serviceType, [serviceType]) : 0);
   const description = item.description || '';
+  const isPreWedding = serviceType === SERVICE_TYPES.PRE_WEDDING;
+  const preWeddingDate = toDateInputValue(item.preWeddingDate);
 
   return `
-    <div class="contract-item-row" data-item-index="${index}">
-      <select class="form-field__input" name="itemServiceType_${index}">
-        ${contractItemServiceOptions(serviceType)}
-      </select>
-      <input class="form-field__input" name="itemDescription_${index}" placeholder="Descrição do serviço"
-        value="${escapeHtml(description)}" />
-      <input class="form-field__input currency-input" name="itemAmount_${index}" placeholder="0,00"
-        value="${amount ? formatCurrencyInput(amount) : ''}" data-auto-price="${autoPrice}" />
-      <button type="button" class="btn btn--ghost btn--sm" data-remove-item="${index}" aria-label="Remover item">
-        <i data-lucide="trash-2" aria-hidden="true"></i>
-      </button>
+    <div class="contract-item-group" data-item-index="${index}">
+      <div class="contract-item-row">
+        <select class="form-field__input" name="itemServiceType_${index}">
+          ${contractItemServiceOptions(serviceType)}
+        </select>
+        <input class="form-field__input" name="itemDescription_${index}" placeholder="Descrição do serviço"
+          value="${escapeHtml(description)}" />
+        <input class="form-field__input currency-input" name="itemAmount_${index}" placeholder="0,00"
+          value="${amount ? formatCurrencyInput(amount) : ''}" data-auto-price="${autoPrice}" />
+        <button type="button" class="btn btn--ghost btn--sm" data-remove-item="${index}" aria-label="Remover item">
+          <i data-lucide="trash-2" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="contract-item-pre-wedding${isPreWedding ? ' is-visible' : ''}" data-pre-wedding-panel="${index}">
+        <label class="form-field__label" for="item-pre-wedding-date-${index}">Data do pré wedding</label>
+        <input
+          class="form-field__input"
+          type="date"
+          id="item-pre-wedding-date-${index}"
+          name="itemPreWeddingDate_${index}"
+          value="${preWeddingDate}"
+        />
+      </div>
     </div>
   `;
 }
 
+function syncServiceItemPreWeddingPanels(form) {
+  form.querySelectorAll('.contract-item-group').forEach((group) => {
+    const index = group.dataset.itemIndex;
+    const serviceType = form.querySelector(`[name="itemServiceType_${index}"]`)?.value;
+    const panel = group.querySelector(`[data-pre-wedding-panel="${index}"]`);
+    if (!panel) return;
+    panel.classList.toggle('is-visible', serviceType === SERVICE_TYPES.PRE_WEDDING);
+  });
+}
+
 function collectItems(form) {
-  const rows = form.querySelectorAll('.contract-item-row');
+  const rows = form.querySelectorAll('.contract-item-group');
   const items = [];
 
   rows.forEach((row) => {
     const index = row.dataset.itemIndex;
     const description = form.querySelector(`[name="itemDescription_${index}"]`)?.value;
     const serviceType = form.querySelector(`[name="itemServiceType_${index}"]`)?.value;
+    const preWeddingDate = form.querySelector(`[name="itemPreWeddingDate_${index}"]`)?.value;
     const amount = parseCurrencyInput(
       form.querySelector(`[name="itemAmount_${index}"]`)?.value
     );
@@ -787,6 +886,9 @@ function collectItems(form) {
         description: description?.trim() || SERVICE_TYPE_LABELS[serviceType] || 'Serviço',
         serviceType,
         amount,
+        ...(serviceType === SERVICE_TYPES.PRE_WEDDING && preWeddingDate
+          ? { preWeddingDate }
+          : {}),
       });
     }
   });
@@ -794,7 +896,7 @@ function collectItems(form) {
   return items;
 }
 
-function getFormData(form, existingContract = null) {
+function getFormData(form, existingContract = null, installments = []) {
   const getValue = (name) => form.querySelector(`[name="${name}"]`)?.value;
   const clientMode = form.querySelector('[name="clientMode"]:checked')?.value;
   const clientId =
@@ -803,6 +905,11 @@ function getFormData(form, existingContract = null) {
       : clientMode === 'existing'
         ? getValue('existingClientId')
         : getValue('clientId');
+
+  const paymentLocked = form.dataset.paymentPlanLocked === 'true';
+  const lockedPayment = paymentLocked && existingContract
+    ? getLockedPaymentFields(existingContract, installments)
+    : null;
 
   return {
     clientId,
@@ -815,18 +922,32 @@ function getFormData(form, existingContract = null) {
     city: getValue('city'),
     state: getValue('state'),
     closingDate: getValue('closingDate'),
-    entryPercent: getValue('entryPercent') ?? existingContract?.entryPercent ?? '',
-    entryAmount: getValue('entryAmount')
-      ? parseCurrencyInput(getValue('entryAmount'))
-      : existingContract?.entryAmount || 0,
-    entryPaymentMethod: getValue('entryPaymentMethod') ?? existingContract?.entryPaymentMethod ?? '',
-    paymentPlanType: getSelectedPaymentPlanType(form),
-    installmentCount: getValue('installmentCount') ?? existingContract?.installmentCount ?? '',
+    entryPercent: lockedPayment?.entryPercent ?? getValue('entryPercent') ?? existingContract?.entryPercent ?? '',
+    entryAmount: lockedPayment
+      ? lockedPayment.entryAmount
+      : getValue('entryAmount')
+        ? parseCurrencyInput(getValue('entryAmount'))
+        : existingContract?.entryAmount || 0,
+    entryPaymentMethod:
+      lockedPayment?.entryPaymentMethod ??
+      getValue('entryPaymentMethod') ??
+      existingContract?.entryPaymentMethod ??
+      '',
+    paymentPlanType: lockedPayment?.paymentPlanType ?? getSelectedPaymentPlanType(form),
+    installmentCount:
+      lockedPayment?.installmentCount ??
+      getValue('installmentCount') ??
+      existingContract?.installmentCount ??
+      '',
     firstDueDate:
-      getValue('firstDueDate') ||
-      (existingContract?.firstDueDate ? toDateInputValue(existingContract.firstDueDate) : ''),
+      lockedPayment?.firstDueDate ??
+      (getValue('firstDueDate') ||
+        (existingContract?.firstDueDate ? toDateInputValue(existingContract.firstDueDate) : '')),
     installmentIntervalMonths:
-      getValue('installmentIntervalMonths') ?? existingContract?.installmentIntervalMonths ?? 1,
+      lockedPayment?.installmentIntervalMonths ??
+      getValue('installmentIntervalMonths') ??
+      existingContract?.installmentIntervalMonths ??
+      1,
     discountEnabled: isDiscountEnabled(form),
     discountAmount: getDiscountCents(form),
     driveLink: getValue('driveLink'),
@@ -876,6 +997,13 @@ function validateContractForm(data, items, { isEdit = false, isNewClient = false
   if (!data.title?.trim()) errors.title = 'O título é obrigatório.';
   if (items.length === 0) errors.items = 'Adicione pelo menos um serviço.';
   if (items.some((i) => i.amount <= 0)) errors.items = 'Todos os serviços precisam ter valor.';
+  if (
+    items.some(
+      (item) => item.serviceType === SERVICE_TYPES.PRE_WEDDING && !item.preWeddingDate
+    )
+  ) {
+    errors.items = 'Informe a data do pré wedding para o serviço selecionado.';
+  }
 
   const subtotal = sumCents(items.map((i) => i.amount));
   const discount = data.discountEnabled ? Number(data.discountAmount) || 0 : 0;
@@ -893,7 +1021,8 @@ function validateContractForm(data, items, { isEdit = false, isNewClient = false
   if (data.entryPercent && (data.entryPercent < 0 || data.entryPercent > 100)) {
     errors.entryPercent = 'Percentual deve ser entre 0 e 100.';
   }
-  if (!isEdit) {
+
+  if (form?.dataset?.paymentPlanLocked !== 'true') {
     if (data.paymentPlanType === PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING && !data.eventDate) {
       errors.eventDate = 'Informe a data do evento para calcular as parcelas antes do casamento.';
     }
@@ -1120,7 +1249,7 @@ function openPreviewModal({ installments, totalCents, onConfirm }) {
 async function resolveClientForContract(form, clientInlineForm, clientPanel, clients, data) {
   if (isNewClientSelected(data.clientId)) {
     const clientData = getClientFormData(clientInlineForm);
-    const clientErrors = validateClientForm(clientData);
+    const clientErrors = await validateClientSubmission(clientData);
 
     if (Object.keys(clientErrors).length > 0) {
       showClientFormErrors(clientInlineForm, clientErrors);
@@ -1216,6 +1345,7 @@ export function openContractFormModal({
   clients,
   contract = null,
   items = [],
+  installments = [],
   onSaved,
   onCreated,
 }) {
@@ -1247,6 +1377,14 @@ export function openContractFormModal({
   const initialDiscountAmount = contract?.discountAmount || 0;
   const initialDiscountEnabled = initialDiscountAmount > 0;
   const initialTotalCents = Math.max(0, initialSubtotalCents - initialDiscountAmount);
+  const initialPlanType = resolvePaymentPlanType(contract, installments);
+  const initialEntryPercent = contract?.entryPercent ?? 30;
+  const initialEntryAmount = contract?.entryAmount ? formatCurrencyInput(contract.entryAmount) : '';
+  const initialEntryPaymentMethod = contract?.entryPaymentMethod || PAYMENT_METHODS.PIX;
+  const initialInstallmentCount = contract?.installmentCount ?? 4;
+  const initialFirstDueDate = toDateInputValue(contract?.firstDueDate);
+  const initialIntervalMonths = contract?.installmentIntervalMonths ?? 1;
+  const hasExistingPayments = contractHasRecordedPayments(installments);
 
   form.innerHTML = `
     <div class="form-section contract-form__overview">
@@ -1373,36 +1511,47 @@ export function openContractFormModal({
       </div>
     </div>
 
-    ${
-      !isEdit
-        ? `
-    <div class="form-section">
+    <div class="form-section contract-form__payment-plan${hasExistingPayments && isEdit ? ' payment-plan-section--locked' : ''}">
       <h3 class="form-section__title">Entrada e parcelamento</h3>
+      ${
+        isEdit
+          ? `
+      <p class="form-field__hint">
+        ${
+          hasExistingPayments
+            ? 'Não é possível alterar o método de pagamento ou parcelamento após registrar o recebimento da entrada ou de alguma parcela.'
+            : 'Ao salvar, as parcelas pendentes serão recriadas conforme o plano abaixo.'
+        }
+      </p>
+      `
+          : ''
+      }
       <div class="form-grid">
         <div class="form-field form-field--full">
           <label class="form-field__label">Forma de pagamento</label>
           <select class="form-field__input" name="paymentPlanType">
-            ${paymentPlanTypeOptions()}
+            ${paymentPlanTypeOptions(initialPlanType)}
           </select>
         </div>
         <div class="form-field payment-plan-field is-visible" data-payment-field="entryPercent">
           <label class="form-field__label">Percentual de entrada (%)</label>
           <input class="form-field__input" type="number" name="entryPercent" min="0" max="100" step="1"
-            value="30" />
+            value="${initialEntryPercent}" />
           <span class="form-field__error" data-error="entryPercent" hidden></span>
         </div>
         <div class="form-field payment-plan-field is-visible" data-payment-field="entryAmount">
           <label class="form-field__label" data-payment-label="entryAmount">Valor da entrada</label>
           <input class="form-field__input currency-input" name="entryAmount"
+            value="${initialEntryAmount}"
             title="Informe o valor da entrada ou use o percentual acima" />
         </div>
         <div class="form-field payment-plan-field is-visible" data-payment-field="entryPaymentMethod">
           <label class="form-field__label" data-payment-label="entryPaymentMethod">Forma de pagamento da entrada</label>
-          <select class="form-field__input" name="entryPaymentMethod">${paymentMethodOptions(PAYMENT_METHODS.PIX)}</select>
+          <select class="form-field__input" name="entryPaymentMethod">${paymentMethodOptions(initialEntryPaymentMethod)}</select>
         </div>
         <div class="form-field payment-plan-field is-visible" data-payment-field="installmentCount">
           <label class="form-field__label" id="installment-count-label">Nº de parcelas antes do casamento</label>
-          <input class="form-field__input" type="number" name="installmentCount" min="1" max="24" value="4" />
+          <input class="form-field__input" type="number" name="installmentCount" min="1" max="24" value="${initialInstallmentCount}" />
           <p class="form-field__hint" id="installment-breakdown-hint" hidden></p>
           <label class="form-checkbox" for="custom-installments-enabled">
             <input
@@ -1433,7 +1582,7 @@ export function openContractFormModal({
         </div>
         <div class="form-field payment-plan-field is-visible" data-payment-field="firstDueDate">
           <label class="form-field__label" id="first-due-label">Primeiro vencimento</label>
-          <input class="form-field__input" type="date" name="firstDueDate" />
+          <input class="form-field__input" type="date" name="firstDueDate" value="${initialFirstDueDate}" />
           <p class="form-field__hint" id="first-due-hint"></p>
         </div>
         <div class="form-field payment-plan-field is-visible" data-payment-field="intervalMonths">
@@ -1458,16 +1607,11 @@ export function openContractFormModal({
             name="installmentIntervalMonths"
             min="1"
             max="12"
-            value="1"
+            value="${initialIntervalMonths}"
           />
         </div>
       </div>
     </div>
-    `
-        : `
-    <p class="text-muted form-section">As parcelas são geradas na criação do contrato. Para alterar parcelas, contate o administrador.</p>
-    `
-    }
 
     <div class="form-section">
       <h3 class="form-section__title">Links</h3>
@@ -1575,17 +1719,18 @@ export function openContractFormModal({
     newRow?.querySelectorAll('.currency-input').forEach(bindCurrencyInput);
     bindItemEvents();
     syncServicePrices(form);
+    syncServiceItemPreWeddingPanels(form);
   });
 
   function bindItemEvents() {
     form.querySelectorAll('[data-remove-item]').forEach((btn) => {
       btn.onclick = () => {
-        const rows = form.querySelectorAll('.contract-item-row');
+        const rows = form.querySelectorAll('.contract-item-group');
         if (rows.length <= 1) {
           showToast('O contrato precisa ter pelo menos um serviço.', 'error');
           return;
         }
-        btn.closest('.contract-item-row').remove();
+        btn.closest('.contract-item-group').remove();
         syncServicePrices(form);
       };
     });
@@ -1593,14 +1738,16 @@ export function openContractFormModal({
 
   bindItemEvents();
   bindServiceItemPricing(form);
+  syncServiceItemPreWeddingPanels(form);
   bindStateCityFields(form);
   bindContractDiscountFields(form);
   bindCustomInstallmentFields(form);
+  initializePaymentPlanForm(form, contract, installments);
+  if (isEdit && hasExistingPayments) {
+    lockPaymentPlanSection(form, true);
+  }
   if (!isEdit) {
-    applyPaymentPlanPreset(form);
     syncServicePrices(form);
-  } else {
-    updateTotalDisplay(form);
   }
 
   form.querySelector('[name="paymentPlanType"]')?.addEventListener('change', () => {
@@ -1654,7 +1801,7 @@ export function openContractFormModal({
 
   footer.querySelector('[data-action="cancel"]').addEventListener('click', close);
 
-  footer.querySelector('[data-action="preview"]')?.addEventListener('click', () => {
+  footer.querySelector('[data-action="preview"]')?.addEventListener('click', async () => {
     const data = getFormData(form);
     const itemsCollected = collectItems(form);
     const isNewClient = isNewClientSelected(data.clientId);
@@ -1669,7 +1816,7 @@ export function openContractFormModal({
     showContractClientIdError(contentWrapper);
 
     if (isNewClient) {
-      const clientErrors = validateClientForm(getClientFormData(clientInlineForm));
+      const clientErrors = await validateClientSubmission(getClientFormData(clientInlineForm));
       if (Object.keys(clientErrors).length > 0) {
         showClientFormErrors(clientInlineForm, clientErrors);
         clientPanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1712,7 +1859,7 @@ export function openContractFormModal({
     const submitBtn = footer.querySelector('[type="submit"]');
 
     try {
-      const data = getFormData(form, contract);
+      const data = getFormData(form, contract, installments);
       const itemsCollected = collectItems(form);
       const isNewClient = isNewClientSelected(data.clientId);
       const errors = validateContractForm(data, itemsCollected, { isEdit, isNewClient, form });
@@ -1737,8 +1884,14 @@ export function openContractFormModal({
       submitBtn.classList.add('btn--loading');
 
       if (isEdit) {
-        await updateContract(contract.id, data, itemsCollected, client, contract);
-        showToast('Contrato atualizado.', 'success');
+        const plan = hasExistingPayments
+          ? null
+          : buildPaymentPlan(form, data, getContractTotalCents(form));
+        await updateContract(contract.id, data, itemsCollected, client, contract, plan);
+        showToast(
+          hasExistingPayments ? 'Contrato atualizado.' : 'Contrato e parcelas atualizados.',
+          'success'
+        );
       } else {
         const totalCents = getContractTotalCents(form);
         const plan = buildPaymentPlan(form, data, totalCents);

@@ -874,11 +874,32 @@
   gap: var(--space-3);
 }
 
+.contract-item-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 .contract-item-row {
   display: grid;
   grid-template-columns: 140px 1fr 120px 40px;
   gap: var(--space-3);
   align-items: center;
+}
+
+.contract-item-pre-wedding {
+  display: none;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 280px;
+  padding: var(--space-3);
+  background: var(--color-gray-50);
+  border: 1px solid var(--color-gray-100);
+  border-radius: var(--radius-md);
+}
+
+.contract-item-pre-wedding.is-visible {
+  display: flex;
 }
 
 .payment-plan-field {
@@ -891,6 +912,17 @@
 
 .payment-plan-field.payment-plan-field--custom-hidden {
   display: none !important;
+}
+
+.payment-plan-section--locked {
+  opacity: 0.72;
+}
+
+.payment-plan-section--locked .form-field__input:disabled,
+.payment-plan-section--locked .form-field__input[disabled],
+.payment-plan-section--locked select:disabled {
+  cursor: not-allowed;
+  background: var(--color-surface-muted, #f3f4f6);
 }
 
 .custom-installments-panel {

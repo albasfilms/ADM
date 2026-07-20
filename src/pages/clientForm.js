@@ -2,6 +2,7 @@ import { createModal } from '../components/Modal.js';
 import {
   createClient,
   updateClient,
+  validateClientSubmission,
   resolveClientCoupleFields,
   splitCoupleName,
 } from '../services/clientService.js';
@@ -12,7 +13,6 @@ import {
   EVENT_TYPE_LABELS,
 } from '../utils/constants.js';
 import {
-  validateClientForm,
   formatPhone,
   formatDocument,
 } from '../utils/validators.js';
@@ -590,7 +590,7 @@ export function openClientFormModal(client = null, onSaved) {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const data = getClientFormData(form);
-    const errors = validateClientForm(data);
+    const errors = await validateClientSubmission(data, { excludeClientId: client?.id });
 
     if (Object.keys(errors).length > 0) {
       showClientFormErrors(form, errors);
@@ -614,7 +614,7 @@ export function openClientFormModal(client = null, onSaved) {
       onSaved?.();
     } catch (error) {
       console.error('[Clients] Erro ao salvar:', error);
-      showToast('Não foi possível salvar o cliente. Tente novamente.', 'error');
+      showToast(error.message || 'Não foi possível salvar o cliente. Tente novamente.', 'error');
       saveBtn.disabled = false;
       saveBtn.classList.remove('btn--loading');
     }

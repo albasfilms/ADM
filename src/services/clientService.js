@@ -5,6 +5,7 @@ import {
   getDocs,
   addDoc,
   updateDoc,
+  deleteDoc,
   query,
   where,
   orderBy,
@@ -14,8 +15,9 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/config.js';
 import { CLIENT_STATUS, PAGE_SIZE, PERSON_TYPES } from '../utils/constants.js';
-import { onlyDigits } from '../utils/validators.js';
+import { onlyDigits, isValidDocument, validateClientForm } from '../utils/validators.js';
 import { getCached, invalidateCacheByPrefix } from '../utils/dataCache.js';
+import { createAuditLog } from './auditService.js';
 
 const COLLECTION = 'clients';
 
@@ -226,7 +228,100 @@ export async function getClientById(id) {
   return { id: snapshot.id, ...snapshot.data() };
 }
 
+async function queryClientsByDocumentField(field, digits) {
+  try {
+    const snapshot = await getDocs(
+      query(collection(db, COLLECTION), where(field, '==', digits))
+    );
+    return snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+  } catch (error) {
+    if (error?.code !== 'failed-precondition') throw error;
+    return null;
+  }
+}
+
+export async function findClientsByDocument(document, { excludeClientId } = {}) {
+  const digits = onlyDigits(document);
+  if (!digits) return [];
+
+  const matches = new Map();
+  const addMatches = (clients) => {
+    clients.forEach((client) => {
+      if (client.id !== excludeClientId) {
+        matches.set(client.id, client);
+      }
+    });
+  };
+
+  const [byDocument, byPartnerDocument] = await Promise.all([
+    queryClientsByDocumentField('document', digits),
+    queryClientsByDocumentField('partnerDocument', digits),
+  ]);
+
+  if (byDocument && byPartnerDocument) {
+    addMatches(byDocument);
+    addMatches(byPartnerDocument);
+    return [...matches.values()];
+  }
+
+  const snapshot = await getDocs(collection(db, COLLECTION));
+  snapshot.docs.forEach((docSnap) => {
+    if (docSnap.id === excludeClientId) return;
+    const data = docSnap.data();
+    if (data.document === digits || data.partnerDocument === digits) {
+      matches.set(docSnap.id, { id: docSnap.id, ...data });
+    }
+  });
+
+  return [...matches.values()];
+}
+
+export async function getClientDocumentConflictErrors(data, { excludeClientId } = {}) {
+  const errors = {};
+  const personType = data.personType || PERSON_TYPES.INDIVIDUAL;
+  const isCouple = Boolean(data.isCouple) && personType !== PERSON_TYPES.COMPANY;
+  const mainDigits = data.document ? onlyDigits(data.document) : '';
+  const partnerDigits = isCouple && data.partnerDocument ? onlyDigits(data.partnerDocument) : '';
+
+  if (mainDigits && partnerDigits && mainDigits === partnerDigits) {
+    errors.partnerDocument = 'Os CPFs dos noivos não podem ser iguais.';
+  }
+
+  if (mainDigits && isValidDocument(data.document, personType)) {
+    const matches = await findClientsByDocument(mainDigits, { excludeClientId });
+    if (matches.length > 0) {
+      const label = personType === PERSON_TYPES.COMPANY ? 'CNPJ' : 'CPF';
+      errors.document = `Este ${label} já está cadastrado para ${getClientDisplayName(matches[0])}.`;
+    }
+  }
+
+  if (partnerDigits && isValidDocument(data.partnerDocument, PERSON_TYPES.INDIVIDUAL)) {
+    const matches = await findClientsByDocument(partnerDigits, { excludeClientId });
+    if (matches.length > 0) {
+      errors.partnerDocument = `Este CPF já está cadastrado para ${getClientDisplayName(matches[0])}.`;
+    }
+  }
+
+  return errors;
+}
+
+export async function validateClientSubmission(data, { excludeClientId } = {}) {
+  return {
+    ...validateClientForm(data),
+    ...(await getClientDocumentConflictErrors(data, { excludeClientId })),
+  };
+}
+
+async function assertClientDocumentsAvailable(data, { excludeClientId } = {}) {
+  const errors = await getClientDocumentConflictErrors(data, { excludeClientId });
+  if (Object.keys(errors).length > 0) {
+    throw new Error(Object.values(errors)[0]);
+  }
+}
+
 export async function createClient(data) {
+  await assertClientDocumentsAvailable(data);
+
   const payload = {
     ...normalizeClientData(data),
     createdAt: serverTimestamp(),
@@ -239,6 +334,8 @@ export async function createClient(data) {
 }
 
 export async function updateClient(id, data) {
+  await assertClientDocumentsAvailable(data, { excludeClientId: id });
+
   const payload = {
     ...normalizeClientData(data),
     updatedAt: serverTimestamp(),
@@ -256,16 +353,40 @@ export async function archiveClient(id) {
   invalidateClientsCache();
 }
 
-export async function getClientContracts(clientId) {
-  try {
-    const snapshot = await getDocs(
-      query(collection(db, 'contracts'), where('clientId', '==', clientId))
-    );
-    return snapshot.docs.map((docSnap) => ({
-      id: docSnap.id,
-      ...docSnap.data(),
-    }));
-  } catch {
-    return [];
+export async function deleteClient(id, user) {
+  const client = await getClientById(id);
+  if (!client) throw new Error('Cliente não encontrado.');
+
+  const contracts = await getClientContracts(id);
+  if (contracts.length > 0) {
+    throw new Error('Este cliente possui contratos vinculados. Exclua os contratos antes de remover o cliente.');
   }
+
+  await deleteDoc(doc(db, COLLECTION, id));
+  invalidateClientsCache();
+
+  if (user) {
+    await createAuditLog({
+      action: 'client_deleted',
+      entityType: 'client',
+      entityId: id,
+      previousData: {
+        name: getClientDisplayName(client),
+        email: client.email || '',
+        phone: client.phone || '',
+      },
+      user,
+    });
+  }
+}
+
+export async function getClientContracts(clientId) {
+  const snapshot = await getDocs(
+    query(collection(db, 'contracts'), where('clientId', '==', clientId))
+  );
+
+  return snapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...docSnap.data(),
+  }));
 }

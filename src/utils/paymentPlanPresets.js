@@ -1,4 +1,44 @@
-import { PAYMENT_METHODS, PAYMENT_PLAN_TYPES } from './constants.js';
+import { INSTALLMENT_STATUS, PAYMENT_PLAN_TYPES } from './constants.js';
+
+export function contractHasRecordedPayments(installments = []) {
+  return installments.some(
+    (i) =>
+      (i.paidAmount || 0) > 0 ||
+      i.status === INSTALLMENT_STATUS.PAID ||
+      i.status === INSTALLMENT_STATUS.PARTIAL
+  );
+}
+
+export function resolvePaymentPlanType(contract, installments = []) {
+  if (contract?.paymentPlanType) {
+    return contract.paymentPlanType;
+  }
+
+  if (!contract) return PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING;
+
+  const entryPercent = Number(contract.entryPercent) || 0;
+  const installmentCount = Number(contract.installmentCount) || 0;
+  const regularInstallments = installments.filter((i) => i.number > 0);
+  const hasEntry = installments.some((i) => i.number === 0);
+
+  if (entryPercent >= 100 && regularInstallments.length === 0) {
+    return PAYMENT_PLAN_TYPES.CASH;
+  }
+
+  const cardHint = installments.some((i) =>
+    (i.description || '').toLowerCase().includes('cartão')
+  );
+
+  if (
+    entryPercent === 0 &&
+    !hasEntry &&
+    (cardHint || regularInstallments.length <= 1 || (installmentCount >= 1 && installmentCount <= 10))
+  ) {
+    return PAYMENT_PLAN_TYPES.CREDIT_CARD;
+  }
+
+  return PAYMENT_PLAN_TYPES.ENTRY_BEFORE_WEDDING;
+}
 
 export function addMonths(date, months) {
   const result = new Date(date);
